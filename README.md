@@ -1,6 +1,17 @@
 # qwen inference accelerate
 qwen 14b chat int4 gptq inference accelerated for V100 16G
 
+# 编译依赖
+### Python包
+pip install peft==0.5.0
+pip install transformers==4.36.0
+pip install sse_starlette
+pip install fastapi
+pip install uvicorn
+
+### cutlass
+需要从https://github.com/NVIDIA/cutlass下载cutlass库，并放到thirdpart/cutlass目录下
+
 # 推理加速框架说明
 
 ### 模型支持
