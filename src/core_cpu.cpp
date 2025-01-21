@@ -203,6 +203,8 @@ void print_cpu_row(std::string row_info, liteqwen::DataType dtype, uint8_t* data
 }
 
 Data::Data(liteqwen::DataType type) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     this->dtype = type;
     this->strides = std::vector<size_t>();
     this->UpdateUnitSize();
@@ -210,6 +212,8 @@ Data::Data(liteqwen::DataType type) {
 }
 
 Data::Data(liteqwen::DataType type, const std::vector<int> &shape) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     this->dtype = type;
     this->strides = std::vector<size_t>();
     this->UpdateUnitSize();
@@ -218,6 +222,8 @@ Data::Data(liteqwen::DataType type, const std::vector<int> &shape) {
 }
 
 Data::Data (DataType type, const std::vector <int> &shape, int gpu_id, bool managed) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     this->dtype = type;
     this->strides = std::vector<size_t>();
     this->UpdateUnitSize();
@@ -227,6 +233,8 @@ Data::Data (DataType type, const std::vector <int> &shape, int gpu_id, bool mana
 }
 
 Data::Data (DataType type, const std::vector <int> &shape, int gpu_id, void* origData, size_t original_offset) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     this->dtype = type;
     this->strides = std::vector<size_t>();
     this->UpdateUnitSize();
@@ -242,15 +250,21 @@ Data::Data (DataType type, const std::vector <int> &shape, int gpu_id, void* ori
 }
 
 Data::Data(const Data& ori, bool shallow) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     this->is_nested = shallow;
     CopyFrom(ori);
 }
 
 Data::Data(const Data &ori) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     CopyFrom(ori);
 }
 
 void Data::CopyFrom(const Data& ori, bool shallow) {
+    this->cudaData = nullptr;
+    this->cpuData = nullptr;
     this->is_nested = shallow;
     this->CopyFrom(ori);
 }

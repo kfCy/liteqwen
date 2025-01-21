@@ -120,7 +120,7 @@ std::pair<bool, size_t> KVPool::search_block(std::string request_id, int max_len
     if (start_block.next->next == nullptr) {
         // printf("empty block chain, assign a new cache block at beginning\n");
         printf("KV_CACHING[gpu%i]: successful allocate maxlen=%i, req_id=%s. Empty memory, numel=<<+%lu>>\n", this->gpu_id, max_length, request_id.c_str(), numel);
-        delete block_chain;
+        delete[] block_chain;
         return std::pair<bool, size_t>(true, static_cast<size_t>(0));
     } else {
         auto cur_blk_ref = start_block.next;
@@ -146,18 +146,18 @@ std::pair<bool, size_t> KVPool::search_block(std::string request_id, int max_len
             memory_info << limit_left << "]_[" << limit_right << "] no space >="<< numel;
             // printf("KV_CACHING[gpu%i]: failed allocate maxlen=%i, req_id=%s. MemoryInfo=%s\n", this->gpu_id, max_length, request_id.c_str(), memory_info.str().c_str());
             memory_info.clear();
-            delete block_chain;
+            delete[] block_chain;
             return std::pair<bool, size_t>(false, static_cast<size_t>(0));
         } else {
             memory_info << limit_left << "]_<<+"<< numel << ">>_[" << limit_right << "]";
             printf("KV_CACHING[gpu%i]: successful allocate maxlen=%i, req_id=%s. MemoryInfo=%s\n", this->gpu_id, max_length, request_id.c_str(), memory_info.str().c_str());
             memory_info.clear();
-            delete block_chain;
+            delete[] block_chain;
             return std::pair<bool, size_t>(true, limit_left);
         }
     }
 
-    delete block_chain;
+    delete[] block_chain;
     return std::pair<bool, size_t>(false, static_cast<size_t>(0));
 };
 

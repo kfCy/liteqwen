@@ -366,7 +366,7 @@ void print_cuda_info(int gpu_id) {
 }
 
 void SetDevice(int gpu_id) {
-    if (gpu_id >= -1) {
+    if (gpu_id >= 0) {
         cudaSetDevice(gpu_id);
     }
 }
