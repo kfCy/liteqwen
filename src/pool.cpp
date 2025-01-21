@@ -152,7 +152,7 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
             kv_cache_ref->free(matched_req_id);
             pool->SetReloadOn(data_id);
         } else if (example_curlen >= example_maxlen ) { // prefill长度达到或超过maxlen，需要避免这样的input。
-            if (example_tk_id == 0) {
+            if (example_tk_id == 151643) {
                 printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
@@ -164,7 +164,7 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
             kv_cache_ref->free(matched_req_id);
             pool->SetReloadOn(data_id);
         } else {
-            if (example_tk_id == 0) {
+            if (example_tk_id == 151643) {
                 printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
@@ -288,7 +288,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
             pool->SetReloadOn(data_id);
             req_item = (--this->decoding_examples.erase(req_item));
         } else if (example_curlen >= example_maxlen ) { // 触发样本指定maxlen的终止条件。
-            if (example_tk_id == 0) {
+            if (example_tk_id == 151643) {
                 printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
@@ -302,7 +302,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
             req_item = (--this->decoding_examples.erase(req_item));
         } 
         else { // 正常decode添加新token，以及当产生token_id=0（大概率推理错误，需要检查hiddens值）
-            if (example_tk_id == 0) {
+            if (example_tk_id == 151643) {
                 printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
