@@ -433,17 +433,17 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
                 oproj_loraA_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
                 oproj_loraB_hidden.Reallocate(current_device, should_reallocate, static_L*hidden_size);
                 oproj_fp32_inp.Reallocate(current_device, should_reallocate, static_L*hidden_size);
-                quant4_lora_linear_fwd(dense_out, attended_out, (*quant4_meta)[layer_prefix+std::string("self_attn.o_proj")].second, (*weights)[layer_prefix+std::string("self_attn.o_proj.bias")], true, oproj_fp32_inp, oproj_loraA_hidden, oproj_loraB_hidden, (*weights)[oproj_loraA_key], (*weights)[oproj_loraB_key], lora_r, lora_scaling);
+                quant4_lora_linear_fwd(dense_out, attended_out, (*quant4_meta)[layer_prefix+std::string("self_attn.o_proj")].second, (*weights)[layer_prefix+std::string("self_attn.o_proj.bias")], false, oproj_fp32_inp, oproj_loraA_hidden, oproj_loraB_hidden, (*weights)[oproj_loraA_key], (*weights)[oproj_loraB_key], lora_r, lora_scaling);
                 oproj_loraA_hidden.Free(should_free);
                 oproj_loraB_hidden.Free(should_free);
                 oproj_fp32_inp.Free(should_free);
             } else {
                 oproj_loraA_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
-                quant4_lora_linear_fused(dense_out, attended_out, (*quant4_meta)[layer_prefix+std::string("self_attn.o_proj")].second, (*weights)[layer_prefix+std::string("self_attn.o_proj.bias")], true, oproj_loraA_hidden, (*weights)[oproj_loraA_key], (*weights)[oproj_loraB_key], lora_r, lora_scaling);
+                quant4_lora_linear_fused(dense_out, attended_out, (*quant4_meta)[layer_prefix+std::string("self_attn.o_proj")].second, (*weights)[layer_prefix+std::string("self_attn.o_proj.bias")], false, oproj_loraA_hidden, (*weights)[oproj_loraA_key], (*weights)[oproj_loraB_key], lora_r, lora_scaling);
                 oproj_loraA_hidden.Free(should_free);
             }
         } else {
-            quant4_linear_fwd(dense_out, attended_out, (*quant4_meta)[layer_prefix+std::string("self_attn.o_proj")].second, (*weights)[layer_prefix+std::string("self_attn.o_proj.bias")], true);
+            quant4_linear_fwd(dense_out, attended_out, (*quant4_meta)[layer_prefix+std::string("self_attn.o_proj")].second, (*weights)[layer_prefix+std::string("self_attn.o_proj.bias")], false);
         }
 
         attended_out.Free(should_free);
@@ -468,17 +468,17 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
                 up_proj_A_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
                 up_proj_B_hidden.Reallocate(current_device, should_reallocate, static_L*ffn_hidden_size);
                 up_proj_fp32_inp.Reallocate(current_device, should_reallocate, static_L*hidden_size);
-                quant4_lora_linear_fwd(mlp_intermediate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.up_proj")].second, (*weights)[layer_prefix+std::string("mlp.up_proj.bias")], true, up_proj_fp32_inp, up_proj_A_hidden, up_proj_B_hidden, (*weights)[up_proj_A_key], (*weights)[up_proj_B_key], lora_r, lora_scaling);
+                quant4_lora_linear_fwd(mlp_intermediate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.up_proj")].second, (*weights)[layer_prefix+std::string("mlp.up_proj.bias")], false, up_proj_fp32_inp, up_proj_A_hidden, up_proj_B_hidden, (*weights)[up_proj_A_key], (*weights)[up_proj_B_key], lora_r, lora_scaling);
                 up_proj_A_hidden.Free(should_free);
                 up_proj_B_hidden.Free(should_free);
                 up_proj_fp32_inp.Free(should_free);
             } else {
                 up_proj_A_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
-                quant4_lora_linear_fused(mlp_intermediate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.up_proj")].second, (*weights)[layer_prefix+std::string("mlp.up_proj.bias")], true, up_proj_A_hidden, (*weights)[up_proj_A_key], (*weights)[up_proj_B_key], lora_r, lora_scaling);
+                quant4_lora_linear_fused(mlp_intermediate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.up_proj")].second, (*weights)[layer_prefix+std::string("mlp.up_proj.bias")], false, up_proj_A_hidden, (*weights)[up_proj_A_key], (*weights)[up_proj_B_key], lora_r, lora_scaling);
                 up_proj_A_hidden.Free(should_free);
             }
         } else {
-            quant4_linear_fwd(mlp_intermediate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.up_proj")].second, (*weights)[layer_prefix+std::string("mlp.up_proj.bias")], true);
+            quant4_linear_fwd(mlp_intermediate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.up_proj")].second, (*weights)[layer_prefix+std::string("mlp.up_proj.bias")], false);
         }
 
         mlp_gate.Reallocate(current_device, should_reallocate, static_L*ffn_hidden_size);
@@ -490,17 +490,17 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
                 gate_proj_A_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
                 gate_proj_B_hidden.Reallocate(current_device, should_reallocate, static_L*ffn_hidden_size);
                 gate_proj_fp32_inp.Reallocate(current_device, should_reallocate, static_L*hidden_size);
-                quant4_lora_linear_fwd(mlp_gate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.gate_proj")].second, (*weights)[layer_prefix+std::string("mlp.gate_proj.bias")], true, gate_proj_fp32_inp, gate_proj_A_hidden, gate_proj_B_hidden, (*weights)[gate_proj_A_key], (*weights)[gate_proj_B_key], lora_r, lora_scaling);
+                quant4_lora_linear_fwd(mlp_gate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.gate_proj")].second, (*weights)[layer_prefix+std::string("mlp.gate_proj.bias")], false, gate_proj_fp32_inp, gate_proj_A_hidden, gate_proj_B_hidden, (*weights)[gate_proj_A_key], (*weights)[gate_proj_B_key], lora_r, lora_scaling);
                 gate_proj_A_hidden.Free(should_free);
                 gate_proj_B_hidden.Free(should_free);
                 gate_proj_fp32_inp.Free(should_free);
             } else {
                 gate_proj_A_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
-                quant4_lora_linear_fused(mlp_gate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.gate_proj")].second, (*weights)[layer_prefix+std::string("mlp.gate_proj.bias")], true, gate_proj_A_hidden, (*weights)[gate_proj_A_key], (*weights)[gate_proj_B_key], lora_r, lora_scaling);
+                quant4_lora_linear_fused(mlp_gate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.gate_proj")].second, (*weights)[layer_prefix+std::string("mlp.gate_proj.bias")], false, gate_proj_A_hidden, (*weights)[gate_proj_A_key], (*weights)[gate_proj_B_key], lora_r, lora_scaling);
                 gate_proj_A_hidden.Free(should_free);
             }
         } else {
-            quant4_linear_fwd(mlp_gate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.gate_proj")].second, (*weights)[layer_prefix+std::string("mlp.gate_proj.bias")], true);
+            quant4_linear_fwd(mlp_gate, post_normalized_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.gate_proj")].second, (*weights)[layer_prefix+std::string("mlp.gate_proj.bias")], false);
         }
 
         if (is_prefill)
@@ -522,17 +522,17 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
                 down_proj_A_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
                 down_proj_B_hidden.Reallocate(current_device, should_reallocate, static_L*hidden_size);
                 down_proj_fp32_inp.Reallocate(current_device, should_reallocate, static_L*ffn_hidden_size);
-                quant4_lora_linear_fwd(mlp_out, mlp_act_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.down_proj")].second, (*weights)[layer_prefix+std::string("mlp.down_proj.bias")], true, down_proj_fp32_inp, down_proj_A_hidden, down_proj_B_hidden, (*weights)[down_proj_A_key], (*weights)[down_proj_B_key], lora_r, lora_scaling);
+                quant4_lora_linear_fwd(mlp_out, mlp_act_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.down_proj")].second, (*weights)[layer_prefix+std::string("mlp.down_proj.bias")], false, down_proj_fp32_inp, down_proj_A_hidden, down_proj_B_hidden, (*weights)[down_proj_A_key], (*weights)[down_proj_B_key], lora_r, lora_scaling);
                 down_proj_A_hidden.Free(should_free);
                 down_proj_B_hidden.Free(should_free);
                 down_proj_fp32_inp.Free(should_free);
             } else {
                 down_proj_A_hidden.Reallocate(current_device, should_reallocate, static_L*lora_r);
-                quant4_lora_linear_fused(mlp_out, mlp_act_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.down_proj")].second, (*weights)[layer_prefix+std::string("mlp.down_proj.bias")], true, down_proj_A_hidden, (*weights)[down_proj_A_key], (*weights)[down_proj_B_key], lora_r, lora_scaling);
+                quant4_lora_linear_fused(mlp_out, mlp_act_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.down_proj")].second, (*weights)[layer_prefix+std::string("mlp.down_proj.bias")], false, down_proj_A_hidden, (*weights)[down_proj_A_key], (*weights)[down_proj_B_key], lora_r, lora_scaling);
                 down_proj_A_hidden.Free(should_free);
             }
         } else {
-            quant4_linear_fwd(mlp_out, mlp_act_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.down_proj")].second, (*weights)[layer_prefix+std::string("mlp.down_proj.bias")], true);
+            quant4_linear_fwd(mlp_out, mlp_act_hidden, (*quant4_meta)[layer_prefix+std::string("mlp.down_proj")].second, (*weights)[layer_prefix+std::string("mlp.down_proj.bias")], false);
         }
 
         mlp_act_hidden.Free(should_free);
