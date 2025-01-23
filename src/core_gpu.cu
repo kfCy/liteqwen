@@ -934,7 +934,7 @@ void CPUConvertFp16ToFp32(float* out, void* in, liteqwen::DataType dtype, size_t
 __global__ void moveLayerPointerKernel(void** gpu_ptr_out, __half* cache_start, size_t layer_stride, int num_layers) {
     if (threadIdx.x == 0) {
         size_t kv_separation = layer_stride * num_layers;
-        liteqwen::Logger::info("kv cache layer ptr: key&value separation=%lu, layer_stride=%lu\n", kv_separation, layer_stride);
+        printf("kv cache layer ptr: key&value separation=%lu, layer_stride=%lu\n", kv_separation, layer_stride);
         for (int i=0; i<num_layers; i++) {
             __half* layer_ptr_key = cache_start + layer_stride * i;
             __half* layer_ptr_val = cache_start + kv_separation + layer_stride * i;
@@ -1031,11 +1031,11 @@ __global__ void check_batch_cache_read_kernel(void** pointers, int channel, int*
     if (threadIdx.x < 3 || threadIdx.x > (channel-3)) {
         for (int t=0; t<3; t++) {
             int chn_offset = t * channel;
-            liteqwen::Logger::info("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset+threadIdx.x)), __half2float(*(value_data_start+chn_offset+threadIdx.x)));
+            printf("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset+threadIdx.x)), __half2float(*(value_data_start+chn_offset+threadIdx.x)));
         }
         for (int t2=data_len-4; t2<data_len; t2++) {
             int chn_offset2 = t2 * channel;
-            liteqwen::Logger::info("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t2, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset2+threadIdx.x)), __half2float(*(value_data_start+chn_offset2+threadIdx.x)));
+            printf("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t2, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset2+threadIdx.x)), __half2float(*(value_data_start+chn_offset2+threadIdx.x)));
         }
     }
 }
