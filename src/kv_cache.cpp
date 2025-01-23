@@ -1,6 +1,6 @@
 #include "kv_cache.h"
 #include "core_gpu.cuh"
-#include "log.h
+#include "log.h"
 
 namespace liteqwen {
 
