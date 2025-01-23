@@ -30,9 +30,6 @@ namespace liteqwen {
         va_start(args, format);
         vprintf(format, args);
         va_end(args);
-
-        // 打印完日志后换行
-        printf("\n");
     }
 
     void Logger::info(const char* format, ...) {
