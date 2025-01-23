@@ -29,12 +29,12 @@ __global__ void invalidFilterWithTemperatureKerkenl(float* logits_out, __half* l
             //         logits[id] = new_lgt;
             //     }
             // } else {
-            //     // printf("valid%f|", __half2float(new_lgt));
+            //     // liteqwen::Logger::info("valid%f|", __half2float(new_lgt));
             //     logits[id] = __float2half(-4096.0f);
             // }
             logits_out[id] = new_lgt;
         } else {
-            // printf("invalid%f|", __half2float(original_val));
+            // liteqwen::Logger::info("invalid%f|", __half2float(original_val));
             // 原始logits溢出，非eos置零，eos直接最大。
             if (id != eos_id) {
                 logits_out[id] = -65536.0f;
@@ -224,7 +224,7 @@ __global__ void SampleKernel(int* sampled_id, __half* probs, int* vocab_indices,
     for (int _k=0; _k<cols; _k++) {
         sample_acc += probs[batch_id * topk + _k];
         if (sample_acc > hx && sample_acc <= threshold) {
-            // printf("sampled item: %i, %i\n", _k, vocab_indices[_k]);
+            // liteqwen::Logger::info("sampled item: %i, %i\n", _k, vocab_indices[_k]);
             sampled_id[batch_id] = vocab_indices[batch_id * topk + _k];
             sample_acc += __float2half(10.0f);
         }
@@ -243,7 +243,7 @@ __global__ void SampleKernelFp32(int* sampled_id, float* probs, int* vocab_indic
     for (int _k=0; _k<cols; _k++) {
         sample_acc += probs[batch_id * topk + _k];
         if (sample_acc > hx && sample_acc <= threshold) {
-            // printf("sampled item: %i, %i\n", _k, vocab_indices[_k]);
+            // liteqwen::Logger::info("sampled item: %i, %i\n", _k, vocab_indices[_k]);
             sampled_id[batch_id] = vocab_indices[batch_id * topk + _k];
             sample_acc += 10.0f;
         }
@@ -273,7 +273,7 @@ __global__ void SoftmaxKernelAct16(__half* out, __half* in, int rows, int padded
         {
             source_pos = -1;
         }
-        // printf("row_i=%d, fold_i=%d, abs_pos=%d(%d,%d)<-%d(%d,%d)\n", row_id, fi, block_pos, threadIdx.x, blockIdx.x, source_pos, inp_col, inp_row); //rm
+        // liteqwen::Logger::info("row_i=%d, fold_i=%d, abs_pos=%d(%d,%d)<-%d(%d,%d)\n", row_id, fi, block_pos, threadIdx.x, blockIdx.x, source_pos, inp_col, inp_row); //rm
         if (source_pos >= 0) {
             // max_val = __hmax(max_val, in[source_pos]);
             __half in_source_val = in[source_pos];
@@ -298,7 +298,7 @@ __global__ void SoftmaxKernelAct16(__half* out, __half* in, int rows, int padded
 
     if (tid==0){
         maxV = sdata[0];
-        // printf("max sdata0=%f\n", __half2float(sdata[0]));
+        // liteqwen::Logger::info("max sdata0=%f\n", __half2float(sdata[0]));
     }
     __syncthreads();
 
@@ -333,11 +333,11 @@ __global__ void SoftmaxKernelAct16(__half* out, __half* in, int rows, int padded
     if (tid == 0) {
         __half epsilon = 1e-4;
         if (__habs(sdata[0]) < epsilon){
-            // printf("replacing sum as epsilon ");
+            // liteqwen::Logger::info("replacing sum as epsilon ");
             sdata[0] = __float2half((float)cols) * epsilon;
             using_epsilon = true;
         }
-        // printf("sum sdata0=%f\n", __half2float(sdata[0]));
+        // liteqwen::Logger::info("sum sdata0=%f\n", __half2float(sdata[0]));
     }
     __syncthreads();
 
@@ -388,7 +388,7 @@ __global__ void SoftmaxKernelAct32(float* out, float* in, int rows, int padded_c
         {
             source_pos = -1;
         }
-        // printf("row_i=%d, fold_i=%d, abs_pos=%d(%d,%d)<-%d(%d,%d)\n", row_id, fi, block_pos, threadIdx.x, blockIdx.x, source_pos, inp_col, inp_row); //rm
+        // liteqwen::Logger::info("row_i=%d, fold_i=%d, abs_pos=%d(%d,%d)<-%d(%d,%d)\n", row_id, fi, block_pos, threadIdx.x, blockIdx.x, source_pos, inp_col, inp_row); //rm
         if (source_pos >= 0) {
             // max_val = __hmax(max_val, in[source_pos]);
             float in_source_val = in[source_pos];
@@ -413,7 +413,7 @@ __global__ void SoftmaxKernelAct32(float* out, float* in, int rows, int padded_c
 
     if (tid==0){
         maxV = sdata[0];
-        // printf("max sdata0=%f\n", __half2float(sdata[0]));
+        // liteqwen::Logger::info("max sdata0=%f\n", __half2float(sdata[0]));
     }
     __syncthreads();
 
@@ -448,11 +448,11 @@ __global__ void SoftmaxKernelAct32(float* out, float* in, int rows, int padded_c
     if (tid == 0) {
         float epsilon = 1e-8;
         if (abs(sdata[0]) < epsilon){
-            // printf("replacing sum as epsilon ");
+            // liteqwen::Logger::info("replacing sum as epsilon ");
             sdata[0] = (float)cols * epsilon;
             using_epsilon = true;
         }
-        // printf("sum sdata0=%f\n", __half2float(sdata[0]));
+        // liteqwen::Logger::info("sum sdata0=%f\n", __half2float(sdata[0]));
     }
     __syncthreads();
 
@@ -489,7 +489,7 @@ curandState* get_gpu_curand_state(int gpu_id, int world_size, int handle_id) {
     if (rand_state_kv != HandleRandStateMap->end()) {
         state = rand_state_kv->second;
     } else {
-        printf("error: cuda random not initialized\n");
+        liteqwen::Logger::error("error: cuda random not initialized\n");
         throw("cuda_error");
     }
     return state;
@@ -517,16 +517,16 @@ void gpu_curand_init(int gpu_id, int world_size, int data_size, int handle_id, c
     auto rand_state_kv = HandleRandStateMap->find(rand_key);
     if (rand_state_kv != HandleRandStateMap->end()) {
         state = rand_state_kv->second;
-        // printf("using existing curand state with key=%i\n", rand_key);
+        // liteqwen::Logger::info("using existing curand state with key=%i\n", rand_key);
         setup_rand_kernel<<<dimGrid, dimBlock>>>(state, seed_gpu, data_size);
     } else {
         if (data_size > 1) {
-            printf("new curand initializing with key=%i, curandSize=%ix%i\n", rand_key, grid_num * BLOCK_SIZE, sizeof(curandState));
+            liteqwen::Logger::info("new curand initializing with key=%i, curandSize=%ix%i\n", rand_key, grid_num * BLOCK_SIZE, sizeof(curandState));
             size_t size = grid_num * BLOCK_SIZE * sizeof(curandState);
             cudaMalloc(&state, size);
             setup_rand_kernel<<<dimGrid, dimBlock>>>(state, seed_gpu, data_size);
         } else {
-            printf("new curand initializing with key=%i, curandSize=%i\n", rand_key, sizeof(curandState));
+            liteqwen::Logger::info("new curand initializing with key=%i, curandSize=%i\n", rand_key, sizeof(curandState));
             size_t size = sizeof(curandState);
             cudaMalloc(&state, size);
             setup_rand_kernel<<<1, 1>>>(state, seed_gpu, data_size);
@@ -548,16 +548,16 @@ void gpu_curand_init(int gpu_id, int world_size, int data_size, int handle_id, c
     auto rand_state_kv = HandleRandStateMap->find(rand_key);
     if (rand_state_kv != HandleRandStateMap->end()) {
         state = rand_state_kv->second;
-        // printf("using existing curand state with key=%i\n", rand_key);
+        // liteqwen::Logger::info("using existing curand state with key=%i\n", rand_key);
         setup_rand_kernel<<<dimGrid, dimBlock>>>(state, seed_gpu, data_size);
     } else {
         if (data_size > 1) {
-            printf("new curand initializing with key=%i, curandSize=%ix%i\n", rand_key, grid_num * BLOCK_SIZE, sizeof(curandState));
+            liteqwen::Logger::info("new curand initializing with key=%i, curandSize=%ix%i\n", rand_key, grid_num * BLOCK_SIZE, sizeof(curandState));
             size_t size = grid_num * BLOCK_SIZE * sizeof(curandState);
             cudaMalloc(&state, size);
             setup_rand_kernel<<<dimGrid, dimBlock>>>(state, seed_gpu, data_size);
         } else {
-            printf("new curand initializing with key=%i, curandSize=%i\n", rand_key, sizeof(curandState));
+            liteqwen::Logger::info("new curand initializing with key=%i, curandSize=%i\n", rand_key, sizeof(curandState));
             size_t size = sizeof(curandState);
             cudaMalloc(&state, size);
             setup_rand_kernel<<<1, 1>>>(state, seed_gpu, data_size);
@@ -583,7 +583,7 @@ void topk_sampling(const liteqwen::Data& out_id, int gpu_id, int world_size, int
         cudaSetDevice(gpu_id);
     }
     if (top_k != 32) {
-        printf("top k != 32 which is not default setup.\n");
+        liteqwen::Logger::info("top k != 32 which is not default setup.\n");
     }
 
     float* logits_data = (float*)(logits.cudaData);

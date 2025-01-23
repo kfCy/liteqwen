@@ -6,13 +6,14 @@
 #include <curand_kernel.h>
 #include "core_cpu.h"
 #include "core_gpu.cuh"
+#include "log.h"
 
 
 #define checkCudaErrors(message, val) showError(val, message, __FILE__, __LINE__)
 void showError(cudaError_t result, char const* const message, const char* const file,
            int const line) {
     if (cudaSuccess != result) {
-        printf("%s\n  CUDA error = %d, %s at %s:%d\n  '%s'\n",
+        liteqwen::Logger::info("%s\n  CUDA error = %d, %s at %s:%d\n  '%s'\n",
             message, result, cudaGetErrorName(result), file, line, cudaGetErrorString(result));
     }  
 }
@@ -333,12 +334,12 @@ void setup_cublas_handler(int gpu_id) {
     cublasHandle_t handler = nullptr;
     auto stat = cublasCreate(&handler);
     if (stat != CUBLAS_STATUS_SUCCESS) {
-        printf ("CUBLAS initialization failed:%d\n", stat);
+        liteqwen::Logger::error("CUBLAS initialization failed:%d\n", stat);
         exit(0);
     } else {
         // (*(CublasHandleMap.get()))[gpu_id] = handler;
         CublasHandleMap[gpu_id] = handler;
-        printf("device %i initialized cublas handler\n", gpu_id);
+        liteqwen::Logger::info("device %i initialized cublas handler\n", gpu_id);
     }
 }
 
@@ -346,7 +347,7 @@ cublasHandle_t get_cublas_handler(int gpu_id) {
     int id;
     if (gpu_id < 0) {
         int id = -1;
-        printf("initializing default cublas handler\n");
+        liteqwen::Logger::info("initializing default cublas handler\n");
         setup_cublas_handler(id);
     } else {
         id = gpu_id;
@@ -362,7 +363,7 @@ void print_cuda_info(int gpu_id) {
     size_t mem_free;
     size_t mem_total;
     cudaMemGetInfo(&mem_free, &mem_total);
-    printf("### device (%i): mem_free=%dMB, mem_total=%dMB\n", gpu_id, mem_free/(1024*1024), mem_total/(1024*1024));
+    liteqwen::Logger::info("### device (%i): mem_free=%dMB, mem_total=%dMB\n", gpu_id, mem_free/(1024*1024), mem_total/(1024*1024));
 }
 
 void SetDevice(int gpu_id) {
@@ -381,7 +382,7 @@ void CheckGPUValues(liteqwen::DataType dtype, size_t numel, void* data) {
         print_invalid_fp16<<<1, 256>>>((__half*)data, numel);
         cudaDeviceSynchronize();
     } else {
-        printf("print only supports fp16, fp32 and int\n");
+        liteqwen::Logger::warn("print only supports fp16, fp32 and int\n");
         return;
     }
 }
@@ -410,7 +411,7 @@ void * CudaDirectMalloc(size_t size) {
     void * ret;
     cudaError_t state = cudaMalloc(&ret, size);
     if (cudaSuccess != state) {
-        printf("Error: CUDA error when allocating %d kB memory! maybe there's no enough memory left on device.", size >> 10);
+        liteqwen::Logger::error("Error: CUDA error when allocating %d kB memory! maybe there's no enough memory left on device.", size >> 10);
         checkCudaErrors("", state);
         return nullptr;
     }
@@ -420,7 +421,7 @@ void * CudaDirectMalloc(size_t size) {
 void CudaDirectFree(void *ret) {
     // printf("direct free, slow\n");
     cudaError_t state = cudaFree(ret);
-    checkCudaErrors("Error: CUDA error when release memory!", state);
+    liteqwen::Logger::error("Error: CUDA error when release memory!", state);
 }
 
 void * ManagedCudaMalloc(int gpu_id, size_t size) {
@@ -453,7 +454,7 @@ void * ManagedCudaMalloc(int gpu_id, size_t size) {
         // printf("risky malloc of size=%i, should not be using during running\n", (int)size);
         cudaError_t state = cudaMalloc(&ret, size);
         if (cudaSuccess != state) {
-            printf("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
+            liteqwen::Logger::error("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
             checkCudaErrors("", state);
             return nullptr;
         }
@@ -476,7 +477,7 @@ void * ManagedCudaMalloc(int gpu_id, size_t size) {
     // printf("risky malloc of size=%i, should not be using during running\n", (int)size);
     cudaError_t state = cudaMalloc(&ret, size);
     if (cudaSuccess != state) {
-        printf("Error: CUDA error when allocating %d KB memory! maybe there's no enough memory left on device.", size >> 10);
+        liteqwen::Logger::error("Error: CUDA error when allocating %d KB memory! maybe there's no enough memory left on device.", size >> 10);
         checkCudaErrors("", state);
         return nullptr;
     }
@@ -647,7 +648,7 @@ void ManagedCudaMallocBigBuffer(int gpu_id, size_t size) {
     // cudaMalloc(&ret, size);
     cudaError_t state = cudaMalloc(&ret, size);
     if (cudaSuccess != state)
-        printf("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
+        liteqwen::Logger::error("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
     checkCudaErrors("", state);
     bigBuffers.push_back(CudaMemoryBuffer(ret, size, false));
 }
@@ -670,7 +671,7 @@ void ManagedCudaClearBigBuffer(int data_group_start_gpu, int data_group_size) {
                 state = cudaSetDevice(it.first);
                 state = cudaFree(bigBuffers[i].data);
                 if (cudaSuccess != state)
-                    printf("Error: CUDA error when release memory on device %d!", it.first);
+                    liteqwen::Logger::error("Error: CUDA error when release memory on device %d!", it.first);
                 checkCudaErrors("", state);
             } else {
                 temp.push_back(bigBuffers[i]);
@@ -801,7 +802,7 @@ void UploadInt32(void* dst, uint8_t* src, int gpu_id, size_t dst_offset, size_t 
     liteqwen::DataType dtype = liteqwen::DataType::INT32;
 
     if (dst_maxlen < copy_length+dst_offset) {
-        printf("copy offset(%lu)+length(%lu) > max_length(%lu) of dest tensor, please check length.\n", dst_offset, copy_length, dst_maxlen);
+        liteqwen::Logger::info("copy offset(%lu)+length(%lu) > max_length(%lu) of dest tensor, please check length.\n", dst_offset, copy_length, dst_maxlen);
         throw("data error");
     }
 
@@ -852,7 +853,7 @@ void ConstantFill(void* dst_data, liteqwen::DataType data_type,  size_t numel, d
     } else if (data_type == liteqwen::DataType::INT32) {
         constValueKernel<int><<<dimGrid, dimBlock>>>((int*)dst_data, numel, static_cast<int>(value));
     } else {
-        printf("not supported fill dtype.\n");
+        liteqwen::Logger::error("not supported fill dtype.\n");
         throw("");
     }
 }
@@ -916,7 +917,7 @@ void PrintRow(std::string row_info, liteqwen::DataType dtype, void* data, size_t
         print_int_data<<<1, 1>>>((int*)data, row_id*cols, cols, print_width, no_tail);
         cudaDeviceSynchronize();        
     } else {
-        printf("print only supports fp16, fp32 and int\n");
+        liteqwen::Logger::error("print only supports fp16, fp32 and int\n");
         return;
     }
 }
@@ -933,7 +934,7 @@ void CPUConvertFp16ToFp32(float* out, void* in, liteqwen::DataType dtype, size_t
 __global__ void moveLayerPointerKernel(void** gpu_ptr_out, __half* cache_start, size_t layer_stride, int num_layers) {
     if (threadIdx.x == 0) {
         size_t kv_separation = layer_stride * num_layers;
-        printf("kv cache layer ptr: key&value separation=%lu, layer_stride=%lu\n", kv_separation, layer_stride);
+        liteqwen::Logger::info("kv cache layer ptr: key&value separation=%lu, layer_stride=%lu\n", kv_separation, layer_stride);
         for (int i=0; i<num_layers; i++) {
             __half* layer_ptr_key = cache_start + layer_stride * i;
             __half* layer_ptr_val = cache_start + kv_separation + layer_stride * i;
@@ -1030,11 +1031,11 @@ __global__ void check_batch_cache_read_kernel(void** pointers, int channel, int*
     if (threadIdx.x < 3 || threadIdx.x > (channel-3)) {
         for (int t=0; t<3; t++) {
             int chn_offset = t * channel;
-            printf("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset+threadIdx.x)), __half2float(*(value_data_start+chn_offset+threadIdx.x)));
+            liteqwen::Logger::info("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset+threadIdx.x)), __half2float(*(value_data_start+chn_offset+threadIdx.x)));
         }
         for (int t2=data_len-4; t2<data_len; t2++) {
             int chn_offset2 = t2 * channel;
-            printf("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t2, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset2+threadIdx.x)), __half2float(*(value_data_start+chn_offset2+threadIdx.x)));
+            liteqwen::Logger::info("bid=%i, t=%i, chn_id=%i, data_len=%i, key=%f, val=%f\n", batch_id, t2, threadIdx.x, data_len, __half2float(*(key_data_start+chn_offset2+threadIdx.x)), __half2float(*(value_data_start+chn_offset2+threadIdx.x)));
         }
     }
 }
