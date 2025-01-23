@@ -50,7 +50,7 @@ message(STATUS "CUDA_FLAGS" ${CUDA_FLAGS})
 
 
 # =============== pack implementing codes ============
-set(LITEQWEN_CXX_SOURCES src/core_cpu.cpp src/pool.cpp src/kv_cache.cpp src/generate.cpp src/liteqwen.cpp src/entities.cpp src/json11.cpp)
+set(LITEQWEN_CXX_SOURCES src/core_cpu.cpp src/pool.cpp src/kv_cache.cpp src/generate.cpp src/liteqwen.cpp src/entities.cpp src/json11.cpp src/log.cpp)
 
 include_directories(src/include)
 include_directories(src/include/device)
@@ -86,7 +86,7 @@ file(GLOB EXLLAMA_IMPL "src/exllama/cuda_func/q4_matrix.cu" "src/exllama/cuda_fu
 set(LITEQWEN_QUANT_SOURCES src/exllama/exllama_liteqwen_ext.cpp ${EXLLAMA_IMPL})
 
 # compile vllm gptq
-set(LITEQWEN_QUANT_VLLM_SOURCES src/vllm_gptq/q_gemm.cu)
+set(LITEQWEN_QUANT_VLLM_SOURCES src/vllm_gptq/q_gemm.cu src/include/log.h src/log.cpp)
 
 # ====== python library and connector ==================
 add_library(liteqwen_conn SHARED

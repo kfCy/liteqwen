@@ -1,6 +1,7 @@
 #include "pool.h"
 #include "kv_cache.h"
 #include "core_gpu.cuh"
+#include "log.h"
 
 std::mutex li_lock_;
 std::mutex res_lock_;
@@ -66,7 +67,7 @@ void BatchInputPreparer::AddPrefill(ResponseContext* ctx_ref) { // std::string r
         this->batch_lora_name = ctx_ref->generation_config.adapter_name;
     } else {
         if (this->batch_lora_name != ctx_ref->generation_config.adapter_name) {
-            printf("ERROR: Lora name obtained by InputPreparer's prev decoding is %s, not equal to adapter_name in context %s. This should not happen, but inference will continue though result may not be accurate. lora is switchable whence all_eos achieved in the batch.\n", this->batch_lora_name.c_str(), ctx_ref->generation_config.adapter_name.c_str());
+            Logger::error("ERROR: Lora name obtained by InputPreparer's prev decoding is %s, not equal to adapter_name in context %s. This should not happen, but inference will continue though result may not be accurate. lora is switchable whence all_eos achieved in the batch.\n", this->batch_lora_name.c_str(), ctx_ref->generation_config.adapter_name.c_str());
         }
     }
     this->all_eos = false;
@@ -93,7 +94,7 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
         }
         ResponseContext* double_check_ctx = pool->GetRes(new_req_id);
         if (double_check_ctx == nullptr) {
-            printf("UPDATE_PREFILL: nullptr context trying to update&append prefill token for %s, possibly due to timeout, skip.\n", new_req_id.c_str());
+            Logger::info("UPDATE_PREFILL: nullptr context trying to update&append prefill token for %s, possibly due to timeout, skip.\n", new_req_id.c_str());
             kv_cache_ref->free(new_req_id);
             pool->SetReloadOn(data_id);
             invalid_request_ids.push_back(new_req_id);
@@ -132,7 +133,7 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
             }
         }
         if (!still_valid_prefill) {
-            printf("TOKEN_UPDATE WARNING: removing invalid prefill req=%s due to not in the provided Update(request_ids) param.\n", req_item->request_id.c_str());
+            Logger::warn("TOKEN_UPDATE WARNING: removing invalid prefill req=%s due to not in the provided Update(request_ids) param.\n", req_item->request_id.c_str());
             req_item = (--this->prefill_examples.erase(req_item));
             if (!deleted_cache) {
                 kv_cache_ref->free(matched_req_id);
@@ -146,18 +147,18 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
         int example_curlen = req_item->current_length;
         auto ctx_ref = pool->GetRes(matched_req_id);
         if (example_eos) { // prefill直接生成eos
-            printf("TOKEN_UPDATE: first frame eos for req=%s, no decoding for the request\n", matched_req_id.c_str());
+            Logger::info("TOKEN_UPDATE: first frame eos for req=%s, no decoding for the request\n", matched_req_id.c_str());
             top_logits_info.try_insert_logits(ctx_ref, prev_bid);
             ctx_ref->Append(example_tk_id, true);
             kv_cache_ref->free(matched_req_id);
             pool->SetReloadOn(data_id);
         } else if (example_curlen >= example_maxlen ) { // prefill长度达到或超过maxlen，需要避免这样的input。
             if (example_tk_id == 151643) {
-                printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
+                Logger::error("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
             } else {
-                printf("TOKEN_UPDATE WARNING: max_len causing early stop for req=%s\n", matched_req_id.c_str());
+                Logger::warn("TOKEN_UPDATE WARNING: max_len causing early stop for req=%s\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
             }                 
@@ -165,7 +166,7 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
             pool->SetReloadOn(data_id);
         } else {
             if (example_tk_id == 151643) {
-                printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
+                Logger::error("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
                 kv_cache_ref->free(matched_req_id);
@@ -175,12 +176,12 @@ void BatchInputPreparer::PrefillUpdate(int data_id, StringArray request_ids, std
                 bool suc = ctx_ref->Append(example_tk_id, false);
                 if (!suc) {
                     // ctx_ref终止生成
-                    printf("TOKEN_UPDATE TERMINATE: repeated generation, stop for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
+                    Logger::info("TOKEN_UPDATE TERMINATE: repeated generation, stop for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                     kv_cache_ref->free(matched_req_id);
                     pool->SetReloadOn(data_id);                          
                 } else {
         // ======= 正常append ========
-                    printf("TOKEN_UPDATE: first frame token generated for req=%s, new_pos=%i, new_len=%i, token=%i, bid=%i, appending to context\n", matched_req_id.c_str(), dynamic_start_position, example_curlen+1, example_tk_id, dynamic_batch_idx);                        
+                    Logger::info("TOKEN_UPDATE: first frame token generated for req=%s, new_pos=%i, new_len=%i, token=%i, bid=%i, appending to context\n", matched_req_id.c_str(), dynamic_start_position, example_curlen+1, example_tk_id, dynamic_batch_idx);
                     all_eos = false;
                     this->decode_inp_ids.push_back(example_tk_id);
                     uint8_t bid8 = static_cast<uint8_t>(dynamic_batch_idx);
@@ -227,7 +228,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
 
         ResponseContext* double_check_ctx = pool->GetRes(new_req_id);
         if (double_check_ctx == nullptr) {
-            printf("UPDATE_DECODE: nullptr context trying to update&append prefill token for %s, possibly due to eos or timeout, skip.\n", new_req_id.c_str());
+            Logger::warn("UPDATE_DECODE: nullptr context trying to update&append prefill token for %s, possibly due to eos or timeout, skip.\n", new_req_id.c_str());
             kv_cache_ref->free(new_req_id);
             pool->SetReloadOn(data_id);
             invalid_request_ids.push_back(new_req_id);
@@ -266,7 +267,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
             }
         }
         if (!still_valid_decode) {
-            printf("TOKEN_UPDATE WARNING: removing invalid prefill req=%s due to not in the provided Update(request_ids) param.\n", req_item->request_id.c_str());
+            Logger::warn("TOKEN_UPDATE WARNING: removing invalid prefill req=%s due to not in the provided Update(request_ids) param.\n", req_item->request_id.c_str());
             req_item = (--this->decoding_examples.erase(req_item));
             if (!deleted_cache) {
                 kv_cache_ref->free(matched_req_id);
@@ -281,7 +282,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
         if (example_eos) { // 正常eos
             int gen_len = req_item->current_length - ctx_ref->input_length;
             // 注意：这里eos时打印的batch_idx可能与prefill时不同，因为生成过程中不断有其他样本eos之后清空，使该样本的batch_idx可能减少。
-            printf("TOKEN_UPDATE: EOS for req=%s, mini_bid=%i, start=%i, inp/gen=%i/%i\n", matched_req_id.c_str(), req_item->batch_idx, req_item->start_position, ctx_ref->input_length, gen_len);
+            Logger::info("TOKEN_UPDATE: EOS for req=%s, mini_bid=%i, start=%i, inp/gen=%i/%i\n", matched_req_id.c_str(), req_item->batch_idx, req_item->start_position, ctx_ref->input_length, gen_len);
             top_logits_info.try_insert_logits(ctx_ref, prev_bid);
             ctx_ref->Append(example_tk_id, true);
             kv_cache_ref->free(matched_req_id);
@@ -289,11 +290,11 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
             req_item = (--this->decoding_examples.erase(req_item));
         } else if (example_curlen >= example_maxlen ) { // 触发样本指定maxlen的终止条件。
             if (example_tk_id == 151643) {
-                printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
+                Logger::error("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
             } else {
-                printf("TOKEN_UPDATE WARNING: max_len causing early stop for req=%s\n", matched_req_id.c_str());
+                Logger::warn("TOKEN_UPDATE WARNING: max_len causing early stop for req=%s\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
             }                 
@@ -303,7 +304,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
         } 
         else { // 正常decode添加新token，以及当产生token_id=0（大概率推理错误，需要检查hiddens值）
             if (example_tk_id == 151643) {
-                printf("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
+                Logger::error("TOKEN_UPDATE ERROR: generated token_id=0 for req=%s, this is unusual, should check for nan & inf values.\n", matched_req_id.c_str());
                 top_logits_info.try_insert_logits(ctx_ref, prev_bid);
                 ctx_ref->Append(example_tk_id, true);
                 kv_cache_ref->free(matched_req_id);
@@ -314,7 +315,7 @@ void BatchInputPreparer::DecodeUpdate(int data_id, StringArray request_ids, std:
                 bool suc = ctx_ref->Append(example_tk_id, false);
                 if (!suc) {
                     // ctx_ref终止生成
-                    printf("TOKEN_UPDATE TERMINATE: either activate terminate or repeated generation, stop for req=%s, this is unusual. If not active terminated, should check for nan & inf values.\n", matched_req_id.c_str());
+                    Logger::warn("TOKEN_UPDATE TERMINATE: either activate terminate or repeated generation, stop for req=%s, this is unusual. If not active terminated, should check for nan & inf values.\n", matched_req_id.c_str());
                     kv_cache_ref->free(matched_req_id);
                     pool->SetReloadOn(data_id);
                     req_item = (--this->decoding_examples.erase(req_item));                            
@@ -379,7 +380,7 @@ void BatchInputPreparer::UploadInputs(bool is_prefill, int inp_gpu_id, int out_g
     if (is_prefill) {
         int dynamic_bsz = this->prefill_bsz;
         int dynamic_bl = (int)(this->prefill_inp_ids.size());
-        // printf("uploading prefills: dynamic_bl=%i, dynamic_bsz=%i, prefill_inp_ids[bl-1]=%i, starts[bsz]=%i\n", dynamic_bl, dynamic_bsz, this->prefill_inp_ids[dynamic_bl-1], this->prefill_starts[dynamic_bsz]);
+        // Logger::info("uploading prefills: dynamic_bl=%i, dynamic_bsz=%i, prefill_inp_ids[bl-1]=%i, starts[bsz]=%i\n", dynamic_bl, dynamic_bsz, this->prefill_inp_ids[dynamic_bl-1], this->prefill_starts[dynamic_bsz]);
         // cpu embedding lookup，无需上传gpu input_ids
         // QuickUploadData(DataType::INT32, (void*)input_ids.cudaData, (uint8_t*)(this->prefill_inp_ids.data()), inp_gpu_id, 0, 0, dynamic_bl);
         QuickUploadData(DataType::INT8, (void*)inp_batch_ids.cudaData, (uint8_t*)(this->prefill_bids.data()), inp_gpu_id, 0, 0, dynamic_bl);
@@ -407,7 +408,7 @@ void BatchInputPreparer::UploadInputs(bool is_prefill, int inp_gpu_id, int out_g
 
 void TimeoutFlush(std::string, ResponseContext) {
     // timeout后的回调函数，暂无使用。
-    // printf("callback_fn: should flush pool and cache due to timeout.\n");
+    // Logger::info("callback_fn: should flush pool and cache due to timeout.\n");
 }
 
 ContextPool::ContextPool(int max_queue_size, int timeout) {
@@ -445,7 +446,7 @@ void ContextPool::UnsafeDelete(std::string key) {
         finished_.erase(key);
         int finished_map_size = (int)(finished_.size());
         int res_list_size = (int)(res_list_.size());
-        printf("POOL: queue after cleaning %s remaining res map/queue size=%i/%i\n", key.c_str(), finished_map_size, res_list_size);
+        Logger::info("POOL: queue after cleaning %s remaining res map/queue size=%i/%i\n", key.c_str(), finished_map_size, res_list_size);
         expired_callback_(key, deleting_ctx);
     }        
 }
@@ -471,7 +472,7 @@ void ContextPool::DELETE(std::string key) {
         finished_.erase(key);
         int finished_map_size = (int)(finished_.size());
         int res_list_size = (int)(res_list_.size());
-        printf("POOL: result queue after cleaning %s remaining res map/queue size=%i/%i\n", key.c_str(), finished_map_size, res_list_size);
+        Logger::info("POOL: result queue after cleaning %s remaining res map/queue size=%i/%i\n", key.c_str(), finished_map_size, res_list_size);
 
         if (finished_map_size == 0) {
             clear_res_list = true;
@@ -491,7 +492,7 @@ void ContextPool::DELETE(std::string key) {
         }
     }
     for (std::string del_key :deleting_keys) {
-        printf("liteqwen backend removing expired finished results %s.\n", del_key.c_str());
+        Logger::info("liteqwen backend removing expired finished results %s.\n", del_key.c_str());
         this->UnsafeDelete(del_key);
     }
 
@@ -504,7 +505,7 @@ void ContextPool::DELETE(std::string key) {
 void ContextPool::DELETE_WAITING(std::string key) {
     li_lock_.lock();
     if (map_.find(key) != map_.end()) {
-        printf("POOL: removing waiting queue, key: %s, found.\n", key.c_str());
+        Logger::info("POOL: removing waiting queue, key: %s, found.\n", key.c_str());
         NodeIter iter = map_[key];
         list_.erase(iter);
         map_.erase(key);
@@ -519,7 +520,7 @@ void ContextPool::Add(std::string key, ResponseContext value)
     // // 如果队列满，删除最旧的。风险不可控，所以会在submit时阻塞等候，直到队列长度减少。
     // if (list_.size() >= max_size_+1)
     // {
-    //     printf("liteqwen backend queue maximum is reached, removing earliest.");
+    //     Logger::info("liteqwen backend queue maximum is reached, removing earliest.");
     //     auto oldest = list_.back();
     //     list_.pop_back();
     //     map_.erase(oldest->key);
@@ -529,14 +530,14 @@ void ContextPool::Add(std::string key, ResponseContext value)
     // 如果key已存在，覆盖旧内容。可能导致生成长度出问题，最好保证同一时间没有两个相同的key被加入队列。
     if (map_.find(key) != map_.end())
     {
-        printf("context queue found existing key: %s, new request will overwrite previous.\n", key.c_str());
+        Logger::info("context queue found existing key: %s, new request will overwrite previous.\n", key.c_str());
         NodeIter iter = map_[key];
         list_.erase(iter);
     }
 
     auto timestamp = std::chrono::system_clock::now();
     NodePtr node = std::make_shared<Node>(Node{key, value, timestamp, false});
-    // printf("pushing new node: %s\n", key.c_str());
+    // Logger::info("pushing new node: %s\n", key.c_str());
     list_.push_front(node);
     map_[key] = list_.begin();
 
@@ -550,17 +551,17 @@ ResponseContext* ContextPool::GetRes(std::string key, bool refresh)
     {
         auto nd = (*finished_[key]);
         if (refresh) {
-            // printf("refreshing ts for %s\n", key.c_str());
+            // Logger::info("refreshing ts for %s\n", key.c_str());
             auto new_ts = std::chrono::system_clock::now();
             nd.get() -> SetTimestamp(new_ts);
         }
         auto ctx_ref = nd.get()->GetValuePtr();
-        // printf("found node in pool:%s, return the pointer %p\n", key.c_str(), ctx_ref);
+        // Logger::info("found node in pool:%s, return the pointer %p\n", key.c_str(), ctx_ref);
         return ctx_ref;
     }
     else
     {
-        // printf("key not found in map, returning empty ResponseContext\n");
+        // Logger::info("key not found in map, returning empty ResponseContext\n");
         return nullptr;
     }
 }
@@ -576,17 +577,17 @@ ResponseContext* ContextPool::GetPtr(std::string key, bool refresh)
     {
         auto nd = (*map_[key]);
         if (refresh) {
-            // printf("refreshing ts for %s\n", key.c_str());
+            // Logger::info("refreshing ts for %s\n", key.c_str());
             auto new_ts = std::chrono::system_clock::now();
             nd.get() -> SetTimestamp(new_ts);
         }
         auto ctx_ref = nd.get()->GetValuePtr();
-        // printf("found node in pool:%s, return the pointer %p\n", key.c_str(), ctx_ref);
+        // Logger::info("found node in pool:%s, return the pointer %p\n", key.c_str(), ctx_ref);
         return ctx_ref;
     }
     else
     {
-        printf("returning nullptr key=%s\n", key.c_str());
+        Logger::info("returning nullptr key=%s\n", key.c_str());
         return nullptr;
     }
 }
@@ -618,7 +619,7 @@ std::vector<AllocateParam> ContextPool::Reload(int data_id, std::string preparer
     std::stringstream  batch_info_joined;
 
     if (!list_.empty()) {
-        // printf("trying to fetch from back of list, len=%i\n", (int)list_.size());
+        // Logger::info("trying to fetch from back of list, len=%i\n", (int)list_.size());
         for (auto it_oldest = list_.rbegin(); it_oldest != list_.rend(); it_oldest++) {
 
             std::string ctx_id = ((*it_oldest).get())->value.request_id;
@@ -635,7 +636,7 @@ std::vector<AllocateParam> ContextPool::Reload(int data_id, std::string preparer
                 if (infering_lora != std::string("ANY") && ctx_adapter_name != infering_lora) {
                     if (!preparer_is_empty || tobe_allocated.size() > 0) {
                         skip_for_break = true;
-                        // printf("DEBUG: lora mismatched, infering until all_eos. infering=%s, ctx_adapter=%s\n", infering_lora.c_str(), ctx_adapter_name.c_str());
+                        // Logger::info("DEBUG: lora mismatched, infering until all_eos. infering=%s, ctx_adapter=%s\n", infering_lora.c_str(), ctx_adapter_name.c_str());
                         batch_info_joined << "|LORA BOUNDARY|" << infering_lora.c_str() << " != " << ctx_adapter_name.c_str();
                         break;
                     }
@@ -665,7 +666,7 @@ std::vector<AllocateParam> ContextPool::Reload(int data_id, std::string preparer
                 // 分桶满足后，需要cache能够容纳样本maxlen的空间。尝试逐个添加，直到cache添加失败(cache占满)。
                 AllocateParam block_info = (kv_cache_ref->pipeline_caches)[0]->search_block_sequence(res_id, example_maxlen, &tobe_allocated);
                 if (!block_info.successful) {
-                    // printf("failure at searching for %s\n", block_info.request_id.c_str());
+                    // Logger::info("failure at searching for %s\n", block_info.request_id.c_str());
                     skip_for_break = true;
                     batch_info_joined << "|CACHE BOUNDARY| failed kv allocate len=" <<  example_maxlen << " req_id=" << res_id.c_str();
                     break;
@@ -673,11 +674,11 @@ std::vector<AllocateParam> ContextPool::Reload(int data_id, std::string preparer
 
                 infering_lora = ctx_adapter_name;
                 block_info.set_lora(infering_lora);
-                // printf("within reload, setting lora = %s for req=%s\n", infering_lora.c_str(), res_id.c_str());
+                // Logger::info("within reload, setting lora = %s for req=%s\n", infering_lora.c_str(), res_id.c_str());
                 tobe_allocated.push_back(block_info);
                 batch_info_joined << "(" << std::to_string(example_maxlen).c_str() << "," << res_id.c_str() << ") "; 
 
-                // printf("fetching a new request %s, setting its data_id to %i\n", (((*it_oldest).get())->value).request_id.c_str(), data_id);
+                // Logger::info("fetching a new request %s, setting its data_id to %i\n", (((*it_oldest).get())->value).request_id.c_str(), data_id);
                 (((*it_oldest).get())->value).SetGenerateFlag(data_id);
                 
                 // 添加至输出序列res_list_
@@ -699,7 +700,7 @@ std::vector<AllocateParam> ContextPool::Reload(int data_id, std::string preparer
     int reloaded_prefill_ct = (int)(tobe_allocated.size());
     
     if (reloaded_prefill_ct>0) {
-        printf("BATCHING: %i prefills in batch at data_id=%i, lora=%s, batch_info=%s\n", reloaded_prefill_ct, data_id, infering_lora.c_str(), batch_info_joined.str().c_str());
+        Logger::info("BATCHING: %i prefills in batch at data_id=%i, lora=%s, batch_info=%s\n", reloaded_prefill_ct, data_id, infering_lora.c_str(), batch_info_joined.str().c_str());
     }
     batch_info_joined.clear();
     // 关闭reload持续reload_interval轮forward，或者直到任意样本eos时提前SetReloadOn.
@@ -738,7 +739,7 @@ void ContextPool::Expired()
         if (oldest->time_updating && diff.count() <= time_out_){
             // 未超时的情况下time_update刷新机制被触发（GetPtr方法的refresh参数为true时），自动移至front。
             auto lifting_key = (oldest -> key);
-            // printf("lifting %s to top due to ts update mark.\n", lifting_key.c_str());
+            // Logger::info("lifting %s to top due to ts update mark.\n", lifting_key.c_str());
             list_.pop_back();
             map_.erase(oldest->key);
             oldest->FinishingSetTimestamp();
@@ -754,9 +755,9 @@ void ContextPool::Expired()
             int listlen = (int)list_.size();
             std::string back_id = (list_.back()->value).request_id;
             if (listlen>0) {
-                printf("Removing due to timeout: %s, dt=%i, threshold=%i. Remaining list length=%i, back_id=%s\n", (oldest->key).c_str(), (int)(diff.count()), (int)time_out_, listlen, back_id.c_str());
+                Logger::info("Removing due to timeout: %s, dt=%i, threshold=%i. Remaining list length=%i, back_id=%s\n", (oldest->key).c_str(), (int)(diff.count()), (int)time_out_, listlen, back_id.c_str());
             } else {
-                printf("Removing due to timeout: %s, dt=%i, threshold=%i. Remaining list length=%i, empty list\n", (oldest->key).c_str(), (int)(diff.count()), (int)time_out_, listlen);
+                Logger::info("Removing due to timeout: %s, dt=%i, threshold=%i. Remaining list length=%i, empty list\n", (oldest->key).c_str(), (int)(diff.count()), (int)time_out_, listlen);
             }
 
             if (oldest->key != back_id) {
@@ -764,7 +765,7 @@ void ContextPool::Expired()
                 expired_callback_(oldest->key, oldest->value);
                 removal_ct += 1;
             } else {
-                printf("ERROR: back_id is same as oldest->key: %s\n", back_id.c_str());
+                Logger::error("ERROR: back_id is same as oldest->key: %s\n", back_id.c_str());
                 continue;
             }
         }
@@ -784,13 +785,13 @@ void ContextPool::SetReloadOn(int data_id){
 
 void ContextPool::SetReloadOff(int data_id){
     this->reload_switch[data_id] = this->minimum_reload_interval;
-    // printf("setting countdown=max\n");
+    // Logger::info("setting countdown=max\n");
 }
 
 bool ContextPool::CanReload(int data_id) {
     for (auto item= this->reload_switch.begin(); item != this->reload_switch.end(); item++) {
         if (item->first == data_id) {
-            // printf("countdown%i\n", item->second);
+            // Logger::info("countdown%i\n", item->second);
             if (item->second <= 0) {
                 return true;
             } else {

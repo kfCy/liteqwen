@@ -7,6 +7,7 @@
 #include "sampling.cuh"
 #include "sgemm_lora.cuh"
 #include "vllm_gptq/q_gemm.cuh"
+#include "log.h"
 
 std::mutex dp_locker;
 
@@ -46,7 +47,7 @@ void prepare_freqs_cis(int dim, int max_seq_len, float theta, float* cos_ten, fl
 }
 
 void fill_cos_sin_on_gpu(int device_id, int max_seq_len, int channel, Data* cos_tensor, Data* sin_tensor) {
-    printf("preparing gpu rotary cos and sin with [seq_length, channel]=[%i, %i] on device %i\n", max_seq_len, channel, device_id);
+    Logger::info("preparing gpu rotary cos and sin with [seq_length, channel]=[%i, %i] on device %i\n", max_seq_len, channel, device_id);
 
     float* fp32_cos = new float[max_seq_len*channel];
     float* fp32_sin = new float[max_seq_len*channel];
@@ -81,7 +82,7 @@ LoraConfig GetLora(std::string preparer_name, std::string one_req_lora, std::map
     } else {
         auto lora_finded = lora_meta->find(one_req_lora);
         if (lora_finded == lora_meta->end()) {
-            printf("warning: lora_name=%s could not be found, using 'skip' instead.\n", one_req_lora.c_str());
+            Logger::warn("warning: lora_name=%s could not be found, using 'skip' instead.\n", one_req_lora.c_str());
             LoraConfig skip_lora = LoraConfig{std::string("skip"), true, 0.0, 0, std::vector<std::string>()};
             lora_cfg = skip_lora;
         } else {
@@ -175,17 +176,17 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
     for (int ii=0; ii<7; ii++){
         lora_enabled[ii] = false;
     }
-    // printf("forward lora is %s, rank=%i\n", lora_cfg.model_name.c_str(), (int)(lora_cfg.target_modules.size()));
+    // Logger::debug("forward lora is %s, rank=%i\n", lora_cfg.model_name.c_str(), (int)(lora_cfg.target_modules.size()));
     if (lora_cfg.model_name != std::string("skip") && (int)(lora_cfg.target_modules.size()) > 0) {
         // lora模块限制在以下7层：q_proj, k_proj, v_proj, o_proj, up_proj, gate_proj, down_proj
-        // printf("using lora with %i layers\n", lora_cfg.target_modules.size());
+        // Logger::debug("using lora with %i layers\n", lora_cfg.target_modules.size());
         adapter_name = lora_cfg.model_name;
         lora_r = lora_cfg.r;
         lora_scaling = lora_cfg.lora_alpha / static_cast<float>(lora_r);
         if (lora_r > 0) {
             for (int module_i=0; module_i<lora_cfg.target_modules.size(); module_i++) {
                 std::string module_nm = lora_cfg.target_modules[module_i];
-                // printf("init lora activation %s\n", module_nm.c_str());
+                // Logger::debug("init lora activation %s\n", module_nm.c_str());
                 if (module_nm == std::string("q_proj")) {
                     qproj_fp32_inp.Init(liteqwen::DataType::FLOAT32, std::vector<int>{dynamic_L, hidden_size}, -1, true);
                     qproj_loraA_hidden.Init(liteqwen::DataType::FLOAT32, std::vector<int>{dynamic_L, lora_r}, -1, true);
@@ -222,7 +223,7 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
                     down_proj_B_hidden.Init(liteqwen::DataType::FLOAT32, std::vector<int>{dynamic_L, hidden_size}, -1, true);
                     lora_enabled[6] = true;
                 } else {
-                    printf("unexpected lora module, ignoring: %s\n", module_nm);
+                    Logger::warn("unexpected lora module, ignoring: %s\n", module_nm);
                     adapter_name = std::string("skip");
                 }
             }
@@ -246,7 +247,7 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
         }
         if (layer_device != current_device) {
             // 多卡pipeline并行推理时，移动至新gpu: [hidden_state, local_cos, local_sin]
-            // printf("moving device%i->%i\n", current_device, layer_device);
+            // Logger::debug("moving device%i->%i\n", current_device, layer_device);
             hidden_state.ToDevice(layer_device);
             local_cos.ToDevice(layer_device);
             local_sin.ToDevice(layer_device);
@@ -369,7 +370,7 @@ void forward(Data* logits_ptr, bool is_prefill, StringArray request_ids, int* cp
             timer->regist(std::string("core_attn")+std::to_string(layer_id));
             // prefill flash attention
             if (attention_heads != kv_heads) {
-                // printf("TODO: should add a tile copy kernel to tile/repeat kv_caches to make flash attention work if using GQA (i.e. attention_heads > kv_heads in qwen 32B models)\n");
+                // Logger::warn("TODO: should add a tile copy kernel to tile/repeat kv_caches to make flash attention work if using GQA (i.e. attention_heads > kv_heads in qwen 32B models)\n");
                 // TODO: 未经测试代码
                 k_proj_layer_tiled.Reallocate(current_device, should_reallocate, static_L*hidden_size);
                 v_proj_layer_tiled.Reallocate(current_device, should_reallocate, static_L*hidden_size);
@@ -595,7 +596,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
     int usual_eos_id = qwen2_param.eos_ids[0]; // 强制eos时使用。
     dp_locker.lock();
     DeviceSynchronize();
-    printf("setting up inference on data_id=%i, using devices=[%i, %i), num_layers=%i, max_dynamic_bsz=%i, max_BL=%i\n", data_id, input_device, output_device+1, (int)(qwen2_param.layer2deviceId.size()), qwen2_param.max_dynamic_bsz, qwen2_param.max_sequence_length);
+    Logger::info("setting up inference on data_id=%i, using devices=[%i, %i), num_layers=%i, max_dynamic_bsz=%i, max_BL=%i\n", data_id, input_device, output_device+1, (int)(qwen2_param.layer2deviceId.size()), qwen2_param.max_dynamic_bsz, qwen2_param.max_sequence_length);
 
     // 依次初始化每块gpu上的tensors和states
     for (int dev_id=qwen2_param.input_deviceId; dev_id<qwen2_param.output_deviceId+1; dev_id++) {
@@ -607,11 +608,11 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
     DeviceSynchronize();
 
     // 初始化kv_cache
-    printf("allocating kv-cache pools for data_id=%i, size=[BL(%i), Hkv(%i)*D(%i)] * layer_num(%i in %i stages) * 2(KV)\n", data_id, qwen2_param.max_sequence_length, qwen2_param.num_key_value_heads, qwen2_param.kv_channels, qwen2_param.num_layers, qwen2_param.pp_size);
+    Logger::info("allocating kv-cache pools for data_id=%i, size=[BL(%i), Hkv(%i)*D(%i)] * layer_num(%i in %i stages) * 2(KV)\n", data_id, qwen2_param.max_sequence_length, qwen2_param.num_key_value_heads, qwen2_param.kv_channels, qwen2_param.num_layers, qwen2_param.pp_size);
     PipelineKVPool* kv_cache_ref = new PipelineKVPool(qwen2_param.max_dynamic_bsz, qwen2_param.max_sequence_length, qwen2_param.num_key_value_heads * qwen2_param.kv_channels, qwen2_param.layer2deviceId);
     BatchInputPreparer* batch_inp_preparer = new BatchInputPreparer(qwen2_param.max_dynamic_bsz, qwen2_param.max_sequence_length);
     DeviceSynchronize();
-    printf("input preparer initialized...allocating cos & sin, max_len=%i, kv_channels=%i, gpu_id=%i\n", qwen2_param.max_sequence_length, qwen2_param.kv_channels, input_device);
+    Logger::info("input preparer initialized...allocating cos & sin, max_len=%i, kv_channels=%i, gpu_id=%i\n", qwen2_param.max_sequence_length, qwen2_param.kv_channels, input_device);
 
     // 初始化rotary
     Data full_cos = Data(DataType::FLOAT16, std::vector<int>{qwen2_param.max_sequence_length, qwen2_param.kv_channels}, input_device, false);
@@ -620,7 +621,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
     full_sin.Allocate();
     fill_cos_sin_on_gpu(input_device, qwen2_param.max_sequence_length, qwen2_param.kv_channels, &full_cos, &full_sin);
     DeviceSynchronize();
-    printf("data_id=%i loading all cpu weights to gpus according to device map.\n", data_id);
+    Logger::info("data_id=%i loading all cpu weights to gpus according to device map.\n", data_id);
 
     std::map<std::string, Data> weights;
     std::map<std::string, int> quant_device_map;
@@ -669,14 +670,14 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
             }
         }  
         // else {// else gptq param location has already been calculated
-        //     printf("q4 param: %s, location=%i on device %i\n", w_key.c_str(), (int)(location), weight_device);
+        //     Logger::info("q4 param: %s, location=%i on device %i\n", w_key.c_str(), (int)(location), weight_device);
         // }
 
         if (location==ParamLocation::CPU) {
             weights[w_key] = Data(w_cpu_p->dtype, w_cpu_p->shape, -1, false);
             weights[w_key].Allocate();
             weights[w_key].CopyFrom(*w_cpu_p, false); // deep copy
-            printf("offloaded param %s to cpu\n", w_key.c_str());
+            Logger::info("offloaded param %s to cpu\n", w_key.c_str());
         } else if (location == ParamLocation::GPU || location == ParamLocation::QUANT_BUFFER) {
             weights[w_key] = Data(w_cpu_p->dtype, w_cpu_p->shape, weight_device, false);
             weights[w_key].Allocate();
@@ -687,7 +688,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
             } else if (w_cpu_p->dtype == DataType::INT32) {
                 weights[w_key].UploadValues(w_cpu_p->numel(), 0, w_cpu_p->cpuData, DataType::INT32);
             } else {
-                printf("TODO: not implemented upload of other dtypes");
+                Logger::info("TODO: not implemented upload of other dtypes");
                 throw("not implemented error");
             }
         }
@@ -695,9 +696,9 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
             weights[w_key] = Data(w_cpu_p->dtype);
         } 
         else { // else IGNORE
-            printf("skipping upload param: %s\n", w_key.c_str());
+            Logger::info("skipping upload param: %s\n", w_key.c_str());
         }
-        // printf("added weight %s to gpu %i, shape=[%s]\n", w_key.c_str(), weight_device, get_shape_str(w_cpu_p->shape).c_str());
+        // Logger::info("added weight %s to gpu %i, shape=[%s]\n", w_key.c_str(), weight_device, get_shape_str(w_cpu_p->shape).c_str());
         DeviceSynchronize();
 
         w_cpu_p->CpuDelete();
@@ -718,9 +719,9 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
         gptq_temp_dq_map[layer_device] = Data(DataType::FLOAT16, std::vector<int>{1, local_max_dq_buffer_size}, layer_device, false);
         gptq_temp_dq_map[layer_device].Allocate();
         DeviceSynchronize();
-        printf("before buffer preparing\n");
+        Logger::info("before buffer preparing\n");
         prepare_buffers(layer_device, gptq_temp_state_map[layer_device], gptq_temp_dq_map[layer_device]);
-        printf("allocated gptq buffers on device %i: state[%i, %i], dq=[1, %i]. starting make_q4\n", layer_device, qwen2_param.max_sequence_length, local_max_inner_outer_dim, local_max_dq_buffer_size);
+        Logger::info("allocated gptq buffers on device %i: state[%i, %i], dq=[1, %i]. starting make_q4\n", layer_device, qwen2_param.max_sequence_length, local_max_inner_outer_dim, local_max_dq_buffer_size);
         DeviceSynchronize();
     }
 
@@ -738,7 +739,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
         uintptr_t q4_ref = make_q4(weights[prefix+std::string(".qweight")], weights[prefix+std::string(".qzeros")], weights[prefix+std::string(".scales")], weights[prefix+std::string(".g_idx")], quant_device);
         quant_ref_dict[prefix] = std::make_pair(quant_device, q4_ref);
     }
-    printf("quant weights prepared for data_id=%i\n", data_id);
+    Logger::info("quant weights prepared for data_id=%i\n", data_id);
     DeviceSynchronize();
     
 
@@ -813,7 +814,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
 
     LoraConfig skip_lora = LoraConfig{std::string("skip"), true, 0.0, 0, std::vector<std::string>()};
     // ======= warmup运行，预分配会被统计，加速后续推理。============
-    printf("warmup prefilling...\n");
+    Logger::info("warmup prefilling...\n");
     SetDevice(input_device);
     ExecuteTimer dummy_timer;
     dummy_timer.disable();
@@ -830,7 +831,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
     } else {
         warmup_lora = skip_lora;
     }
-    printf("warming up for data_id=%i, lora detected=%s, prefill_len=%i ...\n", data_id, warmup_lora.model_name.c_str(), warmup_prefill_len);
+    Logger::info("warming up for data_id=%i, lora detected=%s, prefill_len=%i ...\n", data_id, warmup_lora.model_name.c_str(), warmup_prefill_len);
     std::vector<AllocateParam> warmup_allocs;
     AllocateParam warmup_kv_param = ((kv_cache_ref->pipeline_caches.find(0))->second) ->search_block_sequence(std::string("warmup0001"), warmup_maxlen, &warmup_allocs);
     warmup_allocs.push_back(warmup_kv_param);
@@ -855,7 +856,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
     forward(&logits_last, true, warmup_reqs, cpu_input_ids, cpu_query_starts, input_ids, inp_batch_ids, query_pos_starts, key_pos_starts, batch_maxlen_, dynamic_bl_, warmup_lora, &qwen2_param, full_cos, full_sin, &weights, &quant_ref_dict, kv_cache_ref, &dummy_timer);
     DeviceSynchronize();
     // --- warmup decode ---
-    printf("warmup decoding...\n");
+    Logger::info("warmup decoding...\n");
     int bids_accu = 0;
     std::vector<int> decode_lens_{warmup_prefill_len+1, warmup_prefill_len2+1};
     for (int bi_=0; bi_<dynamic_bsz_; bi_++) {
@@ -872,14 +873,14 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
     kv_cache_ref->free(std::string("warmup0001"));
     kv_cache_ref->free(std::string("warmup0002"));
     DeviceSynchronize();
-    printf("warmup finished for data_id=%i\n", data_id);
+    Logger::info("warmup finished for data_id=%i\n", data_id);
     // ============== warmup完成===============================================
 
     ExecuteTimer timer;
     timer.disable(); // 性能排查时注销，开启计时。要每次记录点都与cpu同步的话，需要开启timer.enable_device_sync()。会增加总耗时，但每层耗时的相对比例会更精确。
     // timer.enable_device_sync();
     set_loading_finished(1);
-    printf("<=============data parallel id %i ready for inference.===========\n", data_id);
+    Logger::info("<=============data parallel id %i ready for inference.===========\n", data_id);
 
     bool prev_iteration_is_prefill = false;
     StringArray decode_request_ids;
@@ -895,11 +896,11 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
             batch_inp_preparer->ClearPrefill();
             auto suc = kv_cache_ref->sequence_allocate_cache(allocate_params);
             if (!suc) {
-                printf("ERROR CACHE: kv-cache not able to allocate requests, this should not happen because numel has been checked.\n");
+                Logger::info("ERROR CACHE: kv-cache not able to allocate requests, this should not happen because numel has been checked.\n");
             }
             if (allocate_params[0].lora_name != prev_forward_lora) {
                 // 切换lora时，lora_r可能不同，所以清理BigBuffer, 重新预分配。
-                printf("CUDA MEM: data_id %i clearing big buffer for lora switch: %s->%s\n", data_id, prev_forward_lora.c_str(), allocate_params[0].lora_name.c_str());
+                Logger::info("CUDA MEM: data_id %i clearing big buffer for lora switch: %s->%s\n", data_id, prev_forward_lora.c_str(), allocate_params[0].lora_name.c_str());
                 ManagedCudaClearBigBuffer(qwen2_param.layer2deviceId[0], qwen2_param.pp_size);
                 DeviceSynchronize();
             }
@@ -923,13 +924,13 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
             }
             std::string joined_reqs = (batch_inp_preparer->prefill_req_ids).get_list_joined();
             prefill_info << "], req_ids=[" << joined_reqs.c_str() <<"]\n";
-            printf(prefill_info.str().c_str());
+            Logger::info(prefill_info.str().c_str());
             int dynamic_bsz = (int)(batch_inp_preparer->prefill_req_ids.size());
 
             // 选择lora
             std::string prefill_lora_name = batch_inp_preparer->GetLoraName();
             LoraConfig prefill_lora_cfg = GetLora(prefill_lora_name, prefill_lora_name, lora_meta);
-            // printf("lora for prefill is %s\n", prefill_lora_cfg.model_name.c_str());
+            // Logger::info("lora for prefill is %s\n", prefill_lora_cfg.model_name.c_str());
 
             // 上传inputs， forward，以及清空preparer的信息（为BatchUpdate后的decode inputs清理lists）。
             bool batch_return_lgts = batch_inp_preparer->PrefillShouldReturnLogits(cpu_return_logits);
@@ -954,7 +955,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
         int decoding_example_ct = (int)(batch_inp_preparer->decoding_examples).size();
         int decode_bsz = batch_inp_preparer->decode_bsz;
         if (decoding_example_ct != decode_bsz) {
-            printf("ERROR: decoding example ct (%i) should be equal to DynamicExample vector length (%i)\n", decode_bsz, decoding_example_ct);
+            Logger::error("ERROR: decoding example ct (%i) should be equal to DynamicExample vector length (%i)\n", decode_bsz, decoding_example_ct);
         }
 
         if (decode_bsz == 0) {
@@ -983,7 +984,7 @@ void Generate(int data_id, std::shared_ptr<ContextPool> pool, Qwen2Params model_
         std::string joined_dec_reqs = decode_request_ids.get_list_joined();
         decode_info << "], req_ids=[" << joined_dec_reqs.c_str() <<"]\n";
         if (prev_iteration_is_prefill) {
-            printf(decode_info.str().c_str());
+            Logger::info(decode_info.str().c_str());
         }
         
         // batch所需cpu端的inputs已经在上次BatchUpdate时填好。

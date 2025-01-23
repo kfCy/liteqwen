@@ -1,5 +1,6 @@
 #include "sampling.cuh"
 #include "core_gpu.cuh"
+#include "log.h"
 
 static std::shared_ptr<std::map<int, curandState*>> HandleRandStateMap = nullptr;
 
@@ -627,6 +628,7 @@ liteqwen::BatchGeneratedRes download_sampled(const liteqwen::Data& sampled_id, i
             }
         }
         if (is_eos) {
+            Logger::info("reach eos: bi=%d, sampled_id_cpu=%ld, eos_ids=%d", bi, sampled_id_cpu, eos_ids[0]);
             ids.push_back(eos_ids[0]);
         } else {
             ids.push_back(sampled_id_cpu);
