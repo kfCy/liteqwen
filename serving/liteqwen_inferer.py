@@ -24,7 +24,7 @@ import os
 os.environ.setdefault("LITEQWEN_MASK_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "mask_templates"))
 
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
     handlers=[logging.StreamHandler(stream=sys.stdout)],
     level="INFO"

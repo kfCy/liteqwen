@@ -11,7 +11,7 @@ from global_config import DATA_PARALLEL_SIZE, GLOBAL_CONFIG, DDP_POOL
 from serving.stream_pool import StreamPool, RetState, GenState
 
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
     handlers=[logging.StreamHandler(stream=sys.stdout)],
     level="INFO"

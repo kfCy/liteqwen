@@ -15,7 +15,7 @@ from serving.stream_pool import StreamPool
 
 workspace = os.path.dirname(__file__)
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
     handlers=[logging.StreamHandler(stream=sys.stdout)],
     level="INFO"
@@ -62,7 +62,8 @@ def manager_cleaner_start():
                     logger.error(f"ALIVE KEEPER: DDP{data_id} CRASHED, pid={pid}, latest_action={latest_log}")
                     dead_processes.append((data_id, pid, gpid))
 
-                    core_del_cmd = f"rm {workspace}/core.* && kill -9 {pid}"
+                    # core_del_cmd = f"rm {workspace}/core.* && kill -9 {pid}"
+                    core_del_cmd = f"kill -9 {pid}"
                     core_rm_res = os.popen(core_del_cmd).read()
                     logger.warning(f"ALIVE KEEPER: executing {core_del_cmd}. res={core_rm_res}")
                 else:

@@ -8,7 +8,7 @@ import datetime
 import sys
 
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
     handlers=[logging.StreamHandler(stream=sys.stdout)],
     level="INFO"

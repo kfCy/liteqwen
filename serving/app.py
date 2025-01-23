@@ -19,7 +19,7 @@ from serving.pool_client import pool_client
 import nest_asyncio
 nest_asyncio.apply()
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
     handlers=[logging.StreamHandler(stream=sys.stdout)],
     level="INFO"
