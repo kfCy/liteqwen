@@ -6,6 +6,7 @@
 #include "entities.h"
 #include "json11.h"
 #include "generate.h"
+#include "log.h"
 
 
 #ifdef WIN32
@@ -43,7 +44,7 @@ extern "C" {
                 applied_maxlen = max_length;
                 max_new_tokens = max_length - input_length;
                 if (max_new_tokens < 1) {
-                    printf("Input Length Error: providing input_length+1 < max_length, this is forbidden. aborting request.\n");
+                    liteqwen::Logger::error("Input Length Error: providing input_length+1 < max_length, this is forbidden. aborting request.\n");
                     return false;
                 }
             }
@@ -53,7 +54,7 @@ extern "C" {
         } else { // only max_length > 0
             max_new_tokens = max_length - input_length;
             if (max_new_tokens < 1) {
-                printf("Input Length Error: providing input_length+1 < max_length, this is forbidden. aborting request.\n");
+                liteqwen::Logger::error("Input Length Error: providing input_length+1 < max_length, this is forbidden. aborting request.\n");
                 return false;
             }
         }

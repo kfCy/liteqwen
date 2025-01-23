@@ -1,5 +1,6 @@
 #include "liteqwen.h"
 #include "generate.h"
+#include "log.h"
 
 std::mutex load_lock;
 
@@ -12,7 +13,7 @@ namespace liteqwen{
         // 每个data_id完成加载后，load_finish_ct+=1，累加直到dp_size，所有进程完成加载，释放barrier。
         load_lock.lock();
         liteqwen::load_finish_ct += ct;
-        printf("loading_ct=%i\n", liteqwen::load_finish_ct);
+        liteqwen::Logger::info("loading_ct=%i\n", liteqwen::load_finish_ct);
 
         if (liteqwen::qwen2params.running_thread_num > 0) {
             if (liteqwen::load_finish_ct >= liteqwen::qwen2params.running_thread_num) {
@@ -21,7 +22,7 @@ namespace liteqwen{
         } else {
             if (liteqwen::load_finish_ct >= liteqwen::qwen2params.dp_size) {
                 liteqwen::loading_finished = true;
-                printf("<============ALL DATA PARALLEL INITIALIZED==========\n");
+                liteqwen::Logger::info("<============ALL DATA PARALLEL INITIALIZED==========\n");
             }
         }
         load_lock.unlock();
@@ -53,7 +54,7 @@ void init_empty_qwen2(int world_size, int running_thread_num, int data_parallel_
             perror("mmap");
         }
         liteqwen::py_token_buffer = (std::shared_ptr<int>)(reinterpret_cast<int*>(ptr));
-        printf("python smem %s binded with size=%i..\n", shm_name, shm_size);
+        liteqwen::Logger::info("python smem %s binded with size=%i..\n", shm_name, shm_size);
     }
     return;
 }
@@ -72,16 +73,16 @@ void add_qwen2_weight(const std::string& weight_name, std::vector<int> shape, li
 int submit_inference(int record_id, const std::string& request_id, std::vector<int> input_ids, const liteqwen::GenerationConfig& gen_cfg, float logits_mask_base_val, float logits_mask_except_val, std::vector<int> logit_mask_except_ids, bool return_logits) {    
     while(liteqwen::thread_pool->GetLength() >= liteqwen::thread_pool->max_queue_size) {
         // 队列已满，提交失败。
-        printf("POOL WARNING: liteqwen backend queue is full until timeout for request_id=%s, submit success=0\n", request_id.c_str());
+        liteqwen::Logger::warn("POOL WARNING: liteqwen backend queue is full until timeout for request_id=%s, submit success=0\n", request_id.c_str());
         return 0;
     }
     if (record_id<0) {
-        printf("POOL ERROR: record id=%i for request_id=%s, must be >= 0\n", record_id, request_id.c_str());
+        liteqwen::Logger::error("POOL ERROR: record id=%i for request_id=%s, must be >= 0\n", record_id, request_id.c_str());
     }
     liteqwen::ResponseContext waiting_ctx;
     waiting_ctx.Init(record_id, request_id, input_ids, gen_cfg, logits_mask_base_val, logits_mask_except_val, logit_mask_except_ids, return_logits);
     liteqwen::thread_pool->Add(request_id, waiting_ctx);
-    printf("POOL: Added to queue: request_id=%s, queue_size=%i\n", request_id.c_str(), liteqwen::thread_pool->GetLength());
+    liteqwen::Logger::info("POOL: Added to queue: request_id=%s, queue_size=%i\n", request_id.c_str(), liteqwen::thread_pool->GetLength());
     return 1;
 }
 
@@ -97,17 +98,17 @@ void add_q4_linear_meta(liteqwen::Q4LinearMeta q4_meta) {
 
 void start_thread_loops() {
     // lora以及cpu weight都加载完后调用，开始各data_id线程的加载和初始化。
-    printf("lora configs loaded:\n");
+    liteqwen::Logger::info("lora configs loaded:\n");
     std::map<std::string, liteqwen::LoraConfig>* lora_map = liteqwen::lora_adapters.get();
     for(std::map<std::string, liteqwen::LoraConfig>::iterator it = lora_map->begin(); it != lora_map->end(); ++it) {
         std::string lora_module_str = liteqwen::join((it->second).target_modules, std::string(","));
-        printf("%s: r=%i, modules=[%s]\n", (it->first).c_str(), (it->second).r, lora_module_str.c_str());
+        liteqwen::Logger::info("%s: r=%i, modules=[%s]\n", (it->first).c_str(), (it->second).r, lora_module_str.c_str());
     }
 
     int dp_size = liteqwen::qwen2params.dp_size;
     liteqwen::Qwen2Params model_par = liteqwen::qwen2params;
 
-    // printf("base_model num_layers=%i, max_dynamic_bsz=%i, BL=%i. Scattering to %i data parallels.\n", 0, model_par.num_layers, model_par.max_dynamic_bsz, model_par.max_sequence_length, model_par.dp_size);
+    // liteqwen::Logger::info("base_model num_layers=%i, max_dynamic_bsz=%i, BL=%i. Scattering to %i data parallels.\n", 0, model_par.num_layers, model_par.max_dynamic_bsz, model_par.max_sequence_length, model_par.dp_size);
     std::map<std::string, liteqwen::Data*>* cpu_weights_ref = liteqwen::originalCPUWeights.get();
     std::map<std::string, liteqwen::LoraConfig>* lora_ref = liteqwen::lora_adapters.get();
     std::map<std::string, liteqwen::Q4LinearMeta>* quant_ref = liteqwen::Q4linearMetaMap.get();
@@ -120,17 +121,17 @@ void start_thread_loops() {
 
 void start_single_thread_loop(int data_id) {
     // lora以及cpu weight都加载完后调用，开始各data_id线程的加载和初始化。
-    printf("lora configs loaded:\n");
+    liteqwen::Logger::info("lora configs loaded:\n");
     std::map<std::string, liteqwen::LoraConfig>* lora_map = liteqwen::lora_adapters.get();
     for(std::map<std::string, liteqwen::LoraConfig>::iterator it = lora_map->begin(); it != lora_map->end(); ++it) {
         std::string lora_module_str = liteqwen::join((it->second).target_modules, std::string(","));
-        printf("%s: r=%i, modules=[%s]\n", (it->first).c_str(), (it->second).r, lora_module_str.c_str());
+        liteqwen::Logger::info("%s: r=%i, modules=[%s]\n", (it->first).c_str(), (it->second).r, lora_module_str.c_str());
     }
 
     int dp_size = liteqwen::qwen2params.dp_size;
     liteqwen::Qwen2Params model_par = liteqwen::qwen2params;
 
-    // printf("base_model num_layers=%i, max_dynamic_bsz=%i, BL=%i. Scattering to %i data parallels.\n", 0, model_par.num_layers, model_par.max_dynamic_bsz, model_par.max_sequence_length, model_par.dp_size);
+    // liteqwen::Logger::info("base_model num_layers=%i, max_dynamic_bsz=%i, BL=%i. Scattering to %i data parallels.\n", 0, model_par.num_layers, model_par.max_dynamic_bsz, model_par.max_sequence_length, model_par.dp_size);
     std::map<std::string, liteqwen::Data*>* cpu_weights_ref = liteqwen::originalCPUWeights.get();
     std::map<std::string, liteqwen::LoraConfig>* lora_ref = liteqwen::lora_adapters.get();
     std::map<std::string, liteqwen::Q4LinearMeta>* quant_ref = liteqwen::Q4linearMetaMap.get();
@@ -150,7 +151,7 @@ liteqwen::Response get_generated(std::string request_id, bool is_incremental, bo
     liteqwen::Response resp;
     while(status == 0) {
         if (ctx_ptr != nullptr) {
-            // printf("node %s length comparing input length:%i?=%i\n", request_id.c_str(), ctx_ptr->input_length, ctx_ptr->current_length);
+            // liteqwen::Logger::info("node %s length comparing input length:%i?=%i\n", request_id.c_str(), ctx_ptr->input_length, ctx_ptr->current_length);
             if (ctx_ptr->input_length == ctx_ptr->current_length) {
                 // std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 // ctx_ptr = (liteqwen::ResponseContext*)liteqwen::thread_pool->GetRes(request_id);
@@ -165,7 +166,7 @@ liteqwen::Response get_generated(std::string request_id, bool is_incremental, bo
                     status = 2;
                     break;
                 } else if (ctx_ptr->input_length < ctx_ptr->current_length) {
-                    // printf("req_id:%s beging generating, status set to 1. inp_len=%i, prev_len=%i, cur_len=%i\n", request_id.c_str(), ctx_ptr->input_length, ctx_ptr->prev_length, ctx_ptr->current_length);
+                    // liteqwen::Logger::info("req_id:%s beging generating, status set to 1. inp_len=%i, prev_len=%i, cur_len=%i\n", request_id.c_str(), ctx_ptr->input_length, ctx_ptr->prev_length, ctx_ptr->current_length);
                     status = 1;
                     break;
                 }
@@ -178,7 +179,7 @@ liteqwen::Response get_generated(std::string request_id, bool is_incremental, bo
                     break;
                 } else if (ctx_ptr->input_length < ctx_ptr->current_length) {
                     status = 1;
-                    // printf("req_id:%s beging generating, status set to 1. inp_len=%i, prev_len=%i, cur_len=%i\n", request_id.c_str(), ctx_ptr->input_length, ctx_ptr->prev_length, ctx_ptr->current_length);
+                    // liteqwen::Logger::info("req_id:%s beging generating, status set to 1. inp_len=%i, prev_len=%i, cur_len=%i\n", request_id.c_str(), ctx_ptr->input_length, ctx_ptr->prev_length, ctx_ptr->current_length);
                     break;
                 } else {
                     status = 0;
@@ -198,11 +199,11 @@ liteqwen::Response get_generated(std::string request_id, bool is_incremental, bo
     }
     else if (status == -1) {
         resp = liteqwen::Response{-1, 0, std::vector<int>(), std::vector<liteqwen::TopLogitsInfo>()};
-        printf("POOL: yielding status -1 for %s, most likely due to timeout.\n", request_id.c_str());
+        liteqwen::Logger::info("POOL: yielding status -1 for %s, most likely due to timeout.\n", request_id.c_str());
         return resp;
     } else {
         if (force_interupt) { //强制终止生成，设置eos，下一次python尝试正常获取generate内容时就会正常eos。
-            printf("POOL: forcing stop: %s\n", request_id.c_str());
+            liteqwen::Logger::info("POOL: forcing stop: %s\n", request_id.c_str());
             ctx_ptr->isEnding = true;
         }
 
@@ -223,18 +224,18 @@ liteqwen::Response get_generated(std::string request_id, bool is_incremental, bo
                     for (int lgt_idx = total_lgt_ct-delta_lgt_ct-1; lgt_idx<total_lgt_ct; lgt_idx++) {
                         response_token_logits.push_back((ctx_ptr->token_logits)[lgt_idx]);
                     }
-                    printf("POOL: returning last frame %i logits\n", total_lgt_ct);
+                    liteqwen::Logger::info("POOL: returning last frame %i logits\n", total_lgt_ct);
                 }
             }
             resp = liteqwen::Response{2, resp_len, response_token_list, response_token_logits};
-            printf("POOL: eos hit for request_id=%s, resp_token_len=%i, deleting from pool.\n", request_id.c_str(), resp_len);
+            liteqwen::Logger::info("POOL: eos hit for request_id=%s, resp_token_len=%i, deleting from pool.\n", request_id.c_str(), resp_len);
             liteqwen::thread_pool->DELETE(request_id);
             return resp;
         }
 
         // int delta_len = ctx_ptr->current_length - ctx_ptr->prev_length;
         // while (delta_len <= 0) { // 确保每次yield内容非空
-        //     // printf("waiting for new content: %s, prev_len=%i, cur_len=%i\n", request_id.c_str(), ctx_ptr->prev_length, ctx_ptr->current_length);
+        //     // liteqwen::Logger::info("waiting for new content: %s, prev_len=%i, cur_len=%i\n", request_id.c_str(), ctx_ptr->prev_length, ctx_ptr->current_length);
         //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
         //     if (ctx_ptr->isEnding) {
         //         break;
@@ -264,9 +265,9 @@ liteqwen::Response get_generated(std::string request_id, bool is_incremental, bo
             int lgt_end_offset = (cur_len - inp_len) * top_k;
             if (lgt_end_offset <= ctx_ptr->token_logits.size()) {
                 response_token_logits = std::vector<liteqwen::TopLogitsInfo>((ctx_ptr->token_logits).begin()+lgt_start_offset, (ctx_ptr->token_logits).begin()+lgt_end_offset);
-                // printf("return with incremental logits[%i:%i], top_k=%i\n", lgt_start_offset, lgt_end_offset, top_k);
+                // liteqwen::Logger::info("return with incremental logits[%i:%i], top_k=%i\n", lgt_start_offset, lgt_end_offset, top_k);
             } else {
-                printf("something wrone with logit offset calculation, total_size=%i, start_offset=%i, end_offset=%i, top_k=%i\n", ctx_ptr->token_logits.size(), prev_len - ctx_ptr->input_length, cur_len - ctx_ptr->input_length, ctx_ptr->generation_config.top_k);
+                liteqwen::Logger::info("something wrone with logit offset calculation, total_size=%i, start_offset=%i, end_offset=%i, top_k=%i\n", ctx_ptr->token_logits.size(), prev_len - ctx_ptr->input_length, cur_len - ctx_ptr->input_length, ctx_ptr->generation_config.top_k);
                 response_token_logits = std::vector<liteqwen::TopLogitsInfo>();
             }
         } else {

@@ -6,14 +6,13 @@
 #include <curand_kernel.h>
 #include "core_cpu.h"
 #include "core_gpu.cuh"
-#include "log.h"
 
 
 #define checkCudaErrors(message, val) showError(val, message, __FILE__, __LINE__)
 void showError(cudaError_t result, char const* const message, const char* const file,
            int const line) {
     if (cudaSuccess != result) {
-        liteqwen::Logger::info("%s\n  CUDA error = %d, %s at %s:%d\n  '%s'\n",
+        printf("%s\n  CUDA error = %d, %s at %s:%d\n  '%s'\n",
             message, result, cudaGetErrorName(result), file, line, cudaGetErrorString(result));
     }  
 }
@@ -334,12 +333,12 @@ void setup_cublas_handler(int gpu_id) {
     cublasHandle_t handler = nullptr;
     auto stat = cublasCreate(&handler);
     if (stat != CUBLAS_STATUS_SUCCESS) {
-        liteqwen::Logger::error("CUBLAS initialization failed:%d\n", stat);
+        printf("CUBLAS initialization failed:%d\n", stat);
         exit(0);
     } else {
         // (*(CublasHandleMap.get()))[gpu_id] = handler;
         CublasHandleMap[gpu_id] = handler;
-        liteqwen::Logger::info("device %i initialized cublas handler\n", gpu_id);
+        printf("device %i initialized cublas handler\n", gpu_id);
     }
 }
 
@@ -347,7 +346,7 @@ cublasHandle_t get_cublas_handler(int gpu_id) {
     int id;
     if (gpu_id < 0) {
         int id = -1;
-        liteqwen::Logger::info("initializing default cublas handler\n");
+        printf("initializing default cublas handler\n");
         setup_cublas_handler(id);
     } else {
         id = gpu_id;
@@ -363,7 +362,7 @@ void print_cuda_info(int gpu_id) {
     size_t mem_free;
     size_t mem_total;
     cudaMemGetInfo(&mem_free, &mem_total);
-    liteqwen::Logger::info("### device (%i): mem_free=%dMB, mem_total=%dMB\n", gpu_id, mem_free/(1024*1024), mem_total/(1024*1024));
+    printf("### device (%i): mem_free=%dMB, mem_total=%dMB\n", gpu_id, mem_free/(1024*1024), mem_total/(1024*1024));
 }
 
 void SetDevice(int gpu_id) {
@@ -382,7 +381,7 @@ void CheckGPUValues(liteqwen::DataType dtype, size_t numel, void* data) {
         print_invalid_fp16<<<1, 256>>>((__half*)data, numel);
         cudaDeviceSynchronize();
     } else {
-        liteqwen::Logger::warn("print only supports fp16, fp32 and int\n");
+        printf("print only supports fp16, fp32 and int\n");
         return;
     }
 }
@@ -411,7 +410,7 @@ void * CudaDirectMalloc(size_t size) {
     void * ret;
     cudaError_t state = cudaMalloc(&ret, size);
     if (cudaSuccess != state) {
-        liteqwen::Logger::error("Error: CUDA error when allocating %d kB memory! maybe there's no enough memory left on device.", size >> 10);
+        printf("Error: CUDA error when allocating %d kB memory! maybe there's no enough memory left on device.", size >> 10);
         checkCudaErrors("", state);
         return nullptr;
     }
@@ -421,7 +420,7 @@ void * CudaDirectMalloc(size_t size) {
 void CudaDirectFree(void *ret) {
     // printf("direct free, slow\n");
     cudaError_t state = cudaFree(ret);
-    liteqwen::Logger::error("Error: CUDA error when release memory!", state);
+    checkCudaErrors("Error: CUDA error when release memory!", state);
 }
 
 void * ManagedCudaMalloc(int gpu_id, size_t size) {
@@ -454,7 +453,7 @@ void * ManagedCudaMalloc(int gpu_id, size_t size) {
         // printf("risky malloc of size=%i, should not be using during running\n", (int)size);
         cudaError_t state = cudaMalloc(&ret, size);
         if (cudaSuccess != state) {
-            liteqwen::Logger::error("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
+            printf("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
             checkCudaErrors("", state);
             return nullptr;
         }
@@ -477,7 +476,7 @@ void * ManagedCudaMalloc(int gpu_id, size_t size) {
     // printf("risky malloc of size=%i, should not be using during running\n", (int)size);
     cudaError_t state = cudaMalloc(&ret, size);
     if (cudaSuccess != state) {
-        liteqwen::Logger::error("Error: CUDA error when allocating %d KB memory! maybe there's no enough memory left on device.", size >> 10);
+        printf("Error: CUDA error when allocating %d KB memory! maybe there's no enough memory left on device.", size >> 10);
         checkCudaErrors("", state);
         return nullptr;
     }
@@ -648,7 +647,7 @@ void ManagedCudaMallocBigBuffer(int gpu_id, size_t size) {
     // cudaMalloc(&ret, size);
     cudaError_t state = cudaMalloc(&ret, size);
     if (cudaSuccess != state)
-        liteqwen::Logger::error("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
+        printf("Error: CUDA error when allocating %d MB memory! maybe there's no enough memory left on device.", size >> 20);
     checkCudaErrors("", state);
     bigBuffers.push_back(CudaMemoryBuffer(ret, size, false));
 }
@@ -671,7 +670,7 @@ void ManagedCudaClearBigBuffer(int data_group_start_gpu, int data_group_size) {
                 state = cudaSetDevice(it.first);
                 state = cudaFree(bigBuffers[i].data);
                 if (cudaSuccess != state)
-                    liteqwen::Logger::error("Error: CUDA error when release memory on device %d!", it.first);
+                    printf("Error: CUDA error when release memory on device %d!", it.first);
                 checkCudaErrors("", state);
             } else {
                 temp.push_back(bigBuffers[i]);
@@ -802,7 +801,7 @@ void UploadInt32(void* dst, uint8_t* src, int gpu_id, size_t dst_offset, size_t 
     liteqwen::DataType dtype = liteqwen::DataType::INT32;
 
     if (dst_maxlen < copy_length+dst_offset) {
-        liteqwen::Logger::info("copy offset(%lu)+length(%lu) > max_length(%lu) of dest tensor, please check length.\n", dst_offset, copy_length, dst_maxlen);
+        printf("copy offset(%lu)+length(%lu) > max_length(%lu) of dest tensor, please check length.\n", dst_offset, copy_length, dst_maxlen);
         throw("data error");
     }
 
@@ -853,7 +852,7 @@ void ConstantFill(void* dst_data, liteqwen::DataType data_type,  size_t numel, d
     } else if (data_type == liteqwen::DataType::INT32) {
         constValueKernel<int><<<dimGrid, dimBlock>>>((int*)dst_data, numel, static_cast<int>(value));
     } else {
-        liteqwen::Logger::error("not supported fill dtype.\n");
+        printf("not supported fill dtype.\n");
         throw("");
     }
 }
@@ -917,7 +916,7 @@ void PrintRow(std::string row_info, liteqwen::DataType dtype, void* data, size_t
         print_int_data<<<1, 1>>>((int*)data, row_id*cols, cols, print_width, no_tail);
         cudaDeviceSynchronize();        
     } else {
-        liteqwen::Logger::error("print only supports fp16, fp32 and int\n");
+        printf("print only supports fp16, fp32 and int\n");
         return;
     }
 }

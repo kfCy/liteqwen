@@ -1,6 +1,7 @@
 #include "entities.h"
 #include "core_cpu.h"
 #include "core_gpu.cuh"
+#include "log.h"
 
 namespace liteqwen {
 
@@ -14,7 +15,7 @@ void GenerationConfig::SetRandSeed() {
 }
 
 void BatchLogitsRes::try_insert_logits(ResponseContext* ctx_ref, int batch_id) {
-    // printf("batch lgt record enabled=%i, return_lgt=%i(batch_id=%i) for req=%s\n", static_cast<int>(this->enabled), static_cast<int>(return_logits[batch_id]), batch_id, ctx_ref->request_id.c_str());
+    // Logger::info("batch lgt record enabled=%i, return_lgt=%i(batch_id=%i) for req=%s\n", static_cast<int>(this->enabled), static_cast<int>(return_logits[batch_id]), batch_id, ctx_ref->request_id.c_str());
     if (this->enabled) {
         if (this->return_logits[batch_id]) {
             for (int k=0; k<this->top_k; k++) {
@@ -63,7 +64,7 @@ void Q4LinearMeta::get_store_location(ParamLocation* location, std::string w_key
 }
 
 void Qwen2Params::Init(int world_size, int running_thread_num, int data_parallel_size, std::string json_config_path, std::vector<int> base_layer2device, int max_dynamic_bsz, int max_sequence_length, int py_record_maxlen) {
-    printf("initializing cpp Qwen1.5 model, with num_layers=%i, max_dynamic_bsz=%i\n", (int)(base_layer2device.size()), max_dynamic_bsz);
+    Logger::info("initializing cpp Qwen1.5 model, with num_layers=%i, max_dynamic_bsz=%i\n", (int)(base_layer2device.size()), max_dynamic_bsz);
     
     // this->bos_token_id = 130004;    // V1 后期版本 bos token，可通过 config.json 覆盖
     // this->eos_token_id = 130005;    // V1 后期版本 eos token，可通过 config.json 覆盖
@@ -93,7 +94,7 @@ void Qwen2Params::Init(int world_size, int running_thread_num, int data_parallel
     this->num_key_value_heads = this->config["num_key_value_heads"].int_value();
     this->kv_channels = this->hidden_size / this->num_attention_heads;
     if (num_key_value_heads != num_attention_heads) {
-        printf("WARNING: detected H_q(%i) != H_kv(%i). Only qwen 32b uses gqa, allowing num_attention_heads>num_key_value_heads, make sure correct model is used.\n", num_attention_heads, num_key_value_heads);
+        Logger::warn("WARNING: detected H_q(%i) != H_kv(%i). Only qwen 32b uses gqa, allowing num_attention_heads>num_key_value_heads, make sure correct model is used.\n", num_attention_heads, num_key_value_heads);
     }
     this->num_layers = this->config["num_hidden_layers"].int_value();
     this->max_dynamic_bsz = max_dynamic_bsz;
@@ -103,14 +104,14 @@ void Qwen2Params::Init(int world_size, int running_thread_num, int data_parallel
 
     this->py_record_maxlen = py_record_maxlen;
     if (this->hidden_size / this->num_attention_heads != this->kv_channels) {
-        printf("ERROR: kv_channel should be equal to hidden_size / num_attention_heads, check for config\n");
+        Logger::error("ERROR: kv_channel should be equal to hidden_size / num_attention_heads, check for config\n");
         exit(1);
     }
 
     std::vector<std::map<int, int>> default_device_maps = std::vector<std::map<int, int>>(); //for each data_id, map layer_id to device_id.
     int layer_num = (int)(base_layer2device.size());
     if (layer_num !=this->num_layers) {
-        printf("layer num implied by device id list is not same as num_layers in config. please modify device id list for each layer\n");
+        Logger::error("layer num implied by device id list is not same as num_layers in config. please modify device id list for each layer\n");
         exit(1);
     }
 
@@ -124,7 +125,7 @@ void Qwen2Params::Init(int world_size, int running_thread_num, int data_parallel
         int data0_device_id = base_layer2device[li];
         
         if (data0_device_id >= this->pp_size) {
-            printf("ERROR: device_id %i assigned for layer %i exceeds pipeline parallel boundary [0,%i). Please fix pipeline parallel configuration to make sure world_size=pp*dp, and each data_id does not use more gpu numbers than pp_size\n", data0_device_id, li, this->pp_size);
+            Logger::error("ERROR: device_id %i assigned for layer %i exceeds pipeline parallel boundary [0,%i). Please fix pipeline parallel configuration to make sure world_size=pp*dp, and each data_id does not use more gpu numbers than pp_size\n", data0_device_id, li, this->pp_size);
             exit(1);
         }
         data0_layer2deviceId.push_back(data0_device_id);
@@ -141,14 +142,14 @@ void Qwen2Params::Init(int world_size, int running_thread_num, int data_parallel
     }
 
     if ((int)(stage2layer_range.size()) != this->pp_size) {
-        printf("ERROR: pp_size(%i) should be equal to stage num implied by base_layer2device list which span over %i devices.\n", this->pp_size, (int)(stage2layer_range.size()));
+        Logger::error("ERROR: pp_size(%i) should be equal to stage num implied by base_layer2device list which span over %i devices.\n", this->pp_size, (int)(stage2layer_range.size()));
         exit(1);
     }
 
     this->data0_layer2deviceId = data0_layer2deviceId;
     this->stage2layer_range = stage2layer_range;
     auto dev_id_list_str = liteqwen::join(data_group_print, std::string(","));
-    printf("Data parallel worker data_id=0 has layers on devices [%s]\n", dev_id_list_str.c_str());
+    Logger::info("Data parallel worker data_id=0 has layers on devices [%s]\n", dev_id_list_str.c_str());
 
     // some redundant params...
     this->projection_size = (this->kv_channels) * this->num_attention_heads;
@@ -167,7 +168,7 @@ void Qwen2Params::update_data_id(int data_id) {
     this->layer2deviceId = layer2deviceId;
     this->input_deviceId = layer2deviceId.front();
     this->output_deviceId = layer2deviceId.back();
-    printf("data_id %i is using devices[%i, %i)\n", data_id, this->input_deviceId, this->output_deviceId+1);
+    Logger::info("data_id %i is using devices[%i, %i)\n", data_id, this->input_deviceId, this->output_deviceId+1);
 }
 
 int Qwen2Params::get_name2device(std::string w_key, int input_device, int output_device) {
@@ -229,7 +230,7 @@ bool ResponseContext::write_to_smem(int token_id, bool is_eos) {
         bool active_terminate = static_cast<bool>(this->smem_ptr[data_start]);
         int reply_len = this->tokens.size() - this->input_length;
         if (active_terminate) {
-            printf("POOL: req=%s terminated by python on record_id=%i, generated_length=%i\n", this->request_id.c_str(), this->record_id, reply_len);
+            Logger::info("POOL: req=%s terminated by python on record_id=%i, generated_length=%i\n", this->request_id.c_str(), this->record_id, reply_len);
         }
         this->smem_ptr[data_start+1] = static_cast<int>(is_eos);
         this->smem_ptr[data_start+2] = static_cast<int>(reply_len);
@@ -274,7 +275,7 @@ bool ResponseContext::Append(int new_token, bool is_eos) {
             window.push_back(new_token);
             window_info<< "]\n";
             // int window_size2 = (int)window.size();
-            // printf("window= %s", window_info.str().c_str());
+            // Logger::info("window= %s", window_info.str().c_str());
             for (int i=2; i<=4; i++) {
                 int repeat_token_ct = 0;
                 for (int j=0; j<i; j++) {
@@ -305,7 +306,7 @@ bool ResponseContext::Append(int new_token, bool is_eos) {
         this->isEnding = true;
         return false;
     } else {
-        // printf("appending token: %i\n", new_token);
+        // Logger::info("appending token: %i\n", new_token);
         this->tokens.push_back(new_token);
         this->current_length += 1;
         if (is_eos){
@@ -436,13 +437,13 @@ void ExecuteTimer::print_stat() {
         auto mean_val = ((this->span_acc).find(key)->second); // / ((this->span_ct).find(key)->second);
         int pass_ct = (this->span_ct).find(key)->second;
         float value = static_cast<float>(mean_val);
-        printf("event %s->%s costs %f/%i secs.\n", (ent.second).c_str(), key.c_str(), value, pass_ct);
+        Logger::info("event %s->%s costs %f/%i secs.\n", (ent.second).c_str(), key.c_str(), value, pass_ct);
     }
 
     for (auto mark: (this->mark_acc)) {
         const std::string mkey = (mark.first);
         float mval = static_cast<float>((this->mark_acc).find(mkey)->second);
-        printf("mark %s costs %f secs.\n", mkey.c_str(), mval);
+        Logger::info("mark %s costs %f secs.\n", mkey.c_str(), mval);
     }
 }
 
