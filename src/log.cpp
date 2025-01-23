@@ -75,10 +75,10 @@ namespace liteqwen {
 
 }
 
-int main() {
-    Logger::info("This is an info log.");
-    Logger::warn("This is a warning log.");
-    Logger::debug("This is a debug log.");
-    Logger::error("This is an error log.");
-    return 0;
-}
+//int main() {
+//    Logger::info("This is an info log.");
+//    Logger::warn("This is a warning log.");
+//    Logger::debug("This is a debug log.");
+//    Logger::error("This is an error log.");
+//    return 0;
+//}
